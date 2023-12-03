@@ -15,8 +15,8 @@ A Norns mod that takes 2 Grids and combines them to form 1 larger virtual Grid a
 1. Install from the Maiden project manager (or `;install https://github.com/dstroud/combiner`)
 2. Add your Grids as ports *3 and 4* in SYSTEM>>DEVICES>>GRID.
 3. Enable the mod in SYSTEM>>MODS>>E3 (+ symbol) and restart.
-4. Edit mod settings via SYSTEM>>MODS>>COMBINER>>K3.
+4. Edit mod settings via SYSTEM>>MODS>>COMBINER>>K3. *(WIP- just works with 2x128 right now)*
 5. *"Virtual grid 128/256"* will appear in appear to scripts as port 1 (default for `grid.connect()`).
 
 ### Notes
-If this doesn't work with your a script, it's probably because that script is using `grid.devices` rather than `grid.vports`. Changing this should be a quick fix for script authors but if there's a reason that's not possible, let me know.
+- If this doesn't work with your a script, it's probably because that script is using `grid.devices` rather than `grid.vports`. Changing this should be a quick fix for script authors but if there's a reason that's not possible, let me know.
