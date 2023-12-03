@@ -16,8 +16,9 @@ A Norns mod that takes two Grids and combines them to form one larger virtual Gr
 1. Install from the Maiden project manager (or `;install https://github.com/dstroud/combiner`)
 2. Add like-sized Grids to **ports 3 and 4** in SYSTEM>>DEVICES>>GRID.
 3. Enable the mod in SYSTEM>>MODS>>E3 (+ symbol) and restart.
-4. Edit mod settings via SYSTEM>>MODS>>COMBINER>>K3. Grid 'a' is port 3 and 'b' is port 4. LED intensity may not be supported on all devices.
-5. The virtual Grid will appear in appear to scripts on port 1 (default for most scripts).
+4. The virtual Grid will appear in appear to scripts on port 1 (default for most scripts).
+5. Grid rotation and LED intensity can be changed via SYSTEM>>MODS>>COMBINER>>K3. Grid 'a' is port 3 and 'b' is port 4. 
 
 ### Notes
-If this doesn't work with your a particular script, it's probably because that script is using `grid.devices` rather than `grid.vports`. Changing this should be a quick fix for script authors but if that's not possible for some reason, just let me know and I can probably find a workaround.
+- LED intensity does not seem to be supported on all devices.
+- If this doesn't work with your a particular script, it's probably because that script is using `grid.devices` rather than `grid.vports`. Changing this should be a quick fix for script authors but if that's not possible for some reason, just let me know and I can probably find a workaround.
