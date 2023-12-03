@@ -1,4 +1,4 @@
-# combiner
+# Combiner
 Mod for Norns to turn 2x128 or 2x64 Grids into 1 virtual Grid
 
 >"Over the course of their endless wars, the Cybertronian race has developed a frightful array of weapons, but the most powerful and versatile invention of all might be the power to physically merge multiple Cybertronians into a single form—this power might be unlocked through conventional Cybertronian science, or through the energies of a mystical artifact like the Enigma of Combination. The term combiner (sometimes capitalized, sometimes not) can be used to refer to both those rare Transformers who possess this ability and the composite machine they create"
