@@ -6,30 +6,43 @@ local filepath = "/home/we/dust/data/combiner/"
 combiner = {}     -- TODO LOCAL!
 combiner.version = 0.2  -- TODO UPDATE
 combiner.menu_lvl = 1
-combiner.menu_pos_l1 = 1
-combiner.menu_pos_l2 = 1
-combiner.rows = 8
+menu_pos = 1
+-- combiner.rows = 8 -- whh
+local snap_quantum = 16
 combiner.rotation_1 = 0
 combiner.rotation_2 = 0
 combiner.intensity_1 = 15
 combiner.intensity_2 = 15
 
-vgrid = grid.connect(1)  -- Virtual Grid -- saves having to set path for setting functions
+editing = 1 -- which index in dlookup is being edited
+dcount = 0
+dlookup = {} -- lookup vport id for entries in devices. TODO- needs to refresh when devices are updated.
+
 -- TODO LOCAL!
+vgrid = grid.connect(1)  -- Virtual Grid -- saves having to set path for setting functions
 port = {}  -- local!
-setup = {}  -- local
-glist = {}  -- 1-indexed list of configured vports -- LOCAL!
-glookup = {} -- lookup vport id for entries in glist since we want this even when device is not connected
+settings = {}  -- local
 
--- for now settings will follow the vport id I suppose. could track device id or serial I guess
--- or reinit when a change is detected'
-for i = 2, 4 do
-  setup[i] = {}
-  setup[i] = {x = 0, y = 0, hw_rot = 0, sw_rot = 0, intensity = 0}
-end
+glyphs = {"arrow"}-- 0, 1, 2, 3}
+glyphs.arrow = {
+  {3,1}, {4,1},
+  {2,2}, {3,2}, {4,2}, {5,2}, 
+  {1,3}, {2,3}, {3,3}, {4,3}, {5,3}, {6,3}, 
+  {3,4}, {4,4}, 
+  {3,5}, {4,5}, 
+  {3,6}, {4,6}, 
+}
 
-local setup_keys = { "x", "y", "hw_rot", "sw_rot", "intensity"}
-local rot = {3, 2, 1, 0, 3, 2, 1}
+local settings_keys = { "x", "y", "rot", "lvl"}
+
+settings_def = {                             -- local
+  x = {min = -63, max = 63, quantum = 4},
+  y = {min = -63, max = 63, quantum = 4},
+  rot = {min = 0, max = 3, quantum = 3},
+  lvl = {min = 1, max = 15, quantum = 1}
+}
+
+local rot = {0, 3, 2, 1} -- {3, 2, 1, 0, 3, 2, 1}
 
 
 local function read_prefs()
@@ -67,263 +80,130 @@ end
 
 
 local function calc_dimensions()
-  local x_max = 0
-  local y_max = 0  
-  for i = 1, #glist do -- todo test with 0 configured!
-    -- print("i="..i)
-    -- tab.print(glist[i])
-    if glist[i].device ~= nil then  -- don't count unless device is connected
-      -- local port = glist[i].device.port -- fn?
-      local port = glookup[i]
-      
-      local x = glist[i].cols + setup[port].x
-      if x > x_max then
-        x_max = x
-        combiner.cols = x
-      end
-      
-      local y = glist[i].rows + setup[port].y
-      if y > y_max then 
-        y_max = y
-        combiner.rows = y
-      end
-      
+  local x_min = nil
+  local y_min = nil
+  local x_max = nil
+  local y_max = nil
+    
+  for i = 1, #dlookup do -- todo test with 0 configured. Also need enabled/disabled
+    local device = grid.devices[dlookup[i]]
+    local settings = settings[dlookup[i]]
+    local rotation = settings.rot
+    local rotated = (rotation % 2) ~= 0
+    local cols = rotated and device.rows or device.cols 
+    local rows = rotated and device.cols or device.rows
+    local x = settings.x
+    local y = settings.y
+    
+    -- local id = dlookup[i]
+    -- local device = grid.devices[id]
+    
+    local x = cols + settings.x
+    if x >= (x_max or x) then
+      x_max = x
     end
-  end
-  
-  print("Combiner: Virtual cols = " .. combiner.cols)
-  print("Combiner: Virtual rows = " .. combiner.rows)
-end
-  
-  local function init_virtual()
-  
-  -- h s example
-  
-  -- 16x8
-  -- grid_data.a[1].orientation  = "std"
-  -- grid_data.a[1].cols         = 16
-  -- grid_data.a[1].rows         = 8
-
-  -- grid_data.a[2].orientation  = "rot"
-  -- grid_data.a[2].cols         = 8
-  -- grid_data.a[2].rows         = 16
-  
-  -- 16x16
-  -- grid_data.a[1].orientation  = "std"
-  -- grid_data.a[1].cols         = 16
-  -- grid_data.a[1].rows         = 16
-  
-  -- no rotation for square!
-
-  
-
-  -- if grid_data.a[1].cols == grid_data.b[1].cols then ... horizontal
-  -- if grid_data.a[1].rows == grid_data.b[1].rows then ... vertical
-  
-  
-  -- for a = 1, #grid_data.a
-    -- for b = 1, #grid_data.b
-      
-  -- final 'configuration' table needs to have:
-  -- layout: horizontal or vertical
-  -- rotation_1 bool
-  -- rotation_2 bool
-  
-  
-  -- shape = {}
-  -- for i = 1, 2 do
-    -- if port[3].cols == port[3].rows then
-    --   shape.a = "square"
-    -- elseif port[3].cols > port[3].rows then
-    --   shape.a = "horizontal"
-    -- elseif port[3].cols < port[3].rows then
-    --   shape.a = "vertical"
-    -- end
-    -- if port[4].cols == port[4].rows then
-    --   shape.b = "square"
-    -- elseif port[4].cols > port[4].rows then
-    --   shape.b = "horizontal"
-    -- elseif port[4].cols < port[4].rows then
-    --   shape.b = "vertical"
-    -- end
-    
-  -- for i = 3, 4 do
-  --   if port[i].cols == port[i].rows then
-  --     shape[i] = "square"
-  --   elseif port[i].cols > port[i].rows then
-  --     shape[i] = "horizontal"
-  --   elseif port[i].cols < port[i].rows then
-  --     shape[i] = "vertical"
-  --   end
-  --   -- if port[4].cols == port[4].rows then
-  --   --   shape[2] = "square"
-  --   -- elseif port[4].cols > port[4].rows then
-  --   --   shape[2] = "horizontal"
-  --   -- elseif port[4].cols < port[4].rows then
-  --   --   shape[2] = "vertical"
-  --   -- end  
-  -- end
-  
-
-  
-  -- grid_data = {{},{}}
-  -- for i = 3, 4 do
-  --   table.insert(grid_data[i], {type = "std", cols = port[i].cols, rows = port[i].rows})
-  --   if shape[i] ~= "square" then
-  --     table.insert(grid_data[i], {type = "rot", cols = port[i].rows, rows = port[i].cols})
-  --   end
-  -- end 
-  
-  
-  -- joins = {}
-  
-  -- if port[3].cols == port[4].cols then table.insert(joins, "cols==cols") end
-  -- if port[3].rows == port[4].rows then table.insert(joins, "rows==rows") end
-  -- if port[3].cols == port[4].rows then table.insert(joins, "cols==rows") end
-  -- if port[3].rows == port[4].cols then table.insert(joins, "rows==cols") end
-
-  
-  -- dimensions = {}
-  
-  -- if port[3].cols == port[4].cols then
-  --   cols = port[3].cols
-  --   rows = port[3].rows + port[4].rows
-  --   -- table.insert(dimensions, "1: a+b vertical " .. port[3].cols .. "x" .. port[3].rows + port[4].rows)
-  --   table.insert(dimensions, "1: a+b vertical " .. cols .. "x" .. rows)
-  --   table.insert(dimensions, "1: a_r+b_r horizontal " .. rows .. "x" .. cols) -- actually worse to rotate if square... hmmm
-  -- end
-  
-  -- if port[3].rows == port[4].rows then
-  --   table.insert(dimensions, "2: a+b horizontal " .. port[3].cols + port[3].cols .. "x" .. port[3].rows)
-  -- end
-
-  -- if port[3].cols == port[4].rows then
-  --   table.insert(dimensions, "3: a+(b rotated) vertical " .. port[3].cols .. "x" .. port[3].rows + port[4].cols)
-  -- end
-  
-  -- if port[3].rows == port[4].cols then
-  --   table.insert(dimensions, "4: a+(b rotated) horizontal " .. port[3].cols + port[3].rows .. "x" .. port[3].rows)
-  -- end
-
-  
-  -- if port[3].cols == 16 and port[4].cols == 16 then -- technically allows a Zero ;)
-  --   print("Combiner: Configuring virtual 16x16 Grid")
-  --   combiner.rows = 16
-  -- elseif port[3].cols == 8 and port[4].cols == 8 then
-  --   print("Combiner: Configuring virtual 16x8 Grid")
-  --   combiner.rows = 8
-  -- else
-  --   print("Combiner: Add like-sized Grids in SYSTEM>>DEVICES>>GRID ports 3 and 4")
-  -- end
-  
-  glist = {}
-  glookup = {}
-  for i = 2, 4 do
-    if grid.vports[i].name ~= "none" then 
-      port[i] = grid.connect(i)
-      print("Combiner: " .. grid.vports[i].name .. " configured on port " .. i)
-      table.insert(glist, grid.vports[i])
-      table.insert(glookup, i)
-      
-
-      -- -- uh oh. this will reinitialize every time something is detected or plugged in!
-      -- -- should these be associated with the vport id, serial, or what?
-      -- setup[i] = {}
-      -- setup[i] = {x = 0, y = 0, hw_rot = 0, sw_rot = 0, intensity = 0}
-   
+    local x = settings.x
+    if x <= (x_min or x) then
+      x_min = x
     end
+    combiner.cols = x_max - x_min
+    combiner.x_min = x_min  -- for relative adjustment
     
-  end
-
-  -- function calc_dimensions()
-  --   local x_max = 0
-  --   local y_max = 0  
-  --   for i = 1, #glist do -- todo test with 0 configured!
-  --     -- print("i="..i)
-  --     -- tab.print(glist[i])
-  --     if glist[i].device ~= nil then  -- don't count unless device is connected
-  --       -- local port = glist[i].device.port -- fn?
-  --       local port = glookup[i]
-        
-  --       local x = glist[i].cols + setup[port].x
-  --       if x > x_max then
-  --         x_max = x
-  --         combiner.cols = x
-  --       end
-        
-  --       local y = glist[i].rows + setup[port].y
-  --       if y > y_max then 
-  --         y_max = y
-  --         combiner.rows = y
-  --       end
-        
-  --     end
-  --   end
-    
-  --   print("Combiner: Virtual cols = " .. combiner.cols)
-  --   print("Combiner: Virtual rows = " .. combiner.rows)
-  -- end
+    local y = rows + settings.y
+    if y >= (y_max or y) then 
+      y_max = y
+    end
+    local y = settings.y
+    if y <= (y_min or y) then
+      y_min = y
+    end
+    combiner.rows = y_max - y_min
+    combiner.y_min = y_min   -- for relative adjustment
+  end  
   
-  calc_dimensions()
-  
-  vgrid.name = "virtual 16x".. combiner.rows
+  vgrid.cols = combiner.cols
   vgrid.rows = combiner.rows
-  vgrid.cols = 16
+  print("Combiner: " .. combiner.cols .. "x" .. combiner.rows .. " virtual Grid configured")
+end
+
+
+-- x_min and y_min are used to adjust if user didn't set starting offsets to 0
+-- may just fake this in mod grid assist views then adjust on menu close
+-- wip how to handle physical rotation of non-square grids
+function def_led()    -- to call when making edits to config 
+  -- TODO: move to a coordinate LUT for routing to physical Grids
+  function vgrid:led(x, y, val)
+    for k, v in pairs(grid.devices) do  -- will be only configured ports
+      local x_offset = settings[k].x - combiner.x_min
+      local y_offset = settings[k].y - combiner.y_min
+
+
+      -- local settings = settings[dlookup[i]]
+      -- local rotation = settings.rot
+      -- local rotated = (rotation % 2) ~= 0
+  
+      -- local cols = rotated and device.rows or device.cols 
+      -- local rows = rotated and device.cols or device.rows
+      
+      -- local x = settings.x
+      -- local y = settings.y
+    
+    
+      
+      if  x > x_offset and x <= (v.cols + x_offset) 
+      and y > y_offset and y <= (v.rows + y_offset) then
+        _norns.grid_set_led(grid.devices[k].dev, x - x_offset, y - y_offset, val)
+      end
+
+    end
+  end
+end
+
+
+-- at some point we'll likely need to store and retrieve settings values based on device name (with serial #)
+local function gen_dev_tables()
+  dlookup = {}  -- always zap it?
+  dcount = 0
+  for k, v in pairs(grid.devices) do
+    local min_dim = math.min(v.cols, v.rows)
+    snap_quantum = min_dim < snap_quantum and min_dim or snap_quantum
+    dcount = dcount + 1
+    table.insert(dlookup, k)
+    settings[k] = {}
+    settings[k] = {x = 0, y = 0, rot = 0, lvl = 15}
+  end  
+end
+
+
+-- called when grids are plugged/unplugged, grid vports are changed, and once at startup after system hook
+-- todo think about what we actually want here vs elsewhere now that we're not using vports
+local function init_virtual()
+
+  calc_dimensions() -- check if needed here
+  
+  vgrid.name = "virtual"
+  vgrid.rows = combiner.rows
+  vgrid.cols = combiner.cols
   vgrid.device = {
     id = 1,
     port = 1,
-    name = "virtual 16x".. combiner.rows,
-    serial = "00000000",
+    name = "virtual",
+    serial = "V0000001",
     -- dev = NA, @tparam userdata dev : opaque pointer to device.
     cols = combiner.cols,
     rows = combiner.rows,
   }
 
-  -- if combiner.rows == 16 then
-  --   function vgrid:led(x, y, val)
-  --     if y <= 8 then
-  --       port[3]:led(x, y, val)
-  --     else
-  --       port[4]:led(x, y - 8, val)
-  --     end
-  --   end
-  -- elseif combiner.rows == 8 then
-  --   function vgrid:led(x, y, val)
-  --     if x <= 8 then
-  --       port[3]:led(x, y, val)
-  --     else
-  --       port[4]:led(x - 8, y, val)
-  --     end
-  --   end
-  -- end
-  
-  if combiner.rows == 24 then -- TESTING
-    function vgrid:led(x, y, val)
-      if y <= 8 then
-        port[3]:led(x, y, val)
-      else
-        port[4]:led(x, y - 8, val)
-      end
-    end
-  elseif combiner.rows == 8 then
-    function vgrid:led(x, y, val)
-      if x <= 8 then
-        port[3]:led(x, y, val)
-      else
-        port[4]:led(x - 8, y, val)
-      end
-    end
-  end
-  
+  def_led()
 
   function vgrid:all(val)
-    port[3]:all(val)
-    port[4]:all(val)
+    _norns.grid_all_led(grid.devices[dlookup[1]].dev, val)
+    _norns.grid_all_led(grid.devices[dlookup[2]].dev, val)
   end
 
   function vgrid:refresh()
-    port[3]:refresh()
-    port[4]:refresh()
+    _norns.monome_refresh(grid.devices[dlookup[1]].dev)
+    _norns.monome_refresh(grid.devices[dlookup[2]].dev)
   end
 
   function vgrid:rotation()
@@ -336,42 +216,64 @@ end
 
 end
 
+  
+function rotate_xy(coordinates, rotations)
+  local rotated = {}
+  for _, coord in ipairs(coordinates) do
+    local x, y = coord[1], coord[2]
+    
+    for _ = 1, rotations do
+      x, y = 7 - y, x -- 90-degree rotation CW
+    end
 
--- define new key input handlers that pass to virtual grid
+    table.insert(rotated, {x, y})
+  end
+
+  return rotated
+end
+
+
+function highlight_grid(id)
+  for k, v in pairs(grid.devices) do
+    local dev = v.dev
+    _norns.grid_all_led(dev, 0)
+    if k == id then
+      for x = 1, v.cols do
+        for y = 1, v.rows do
+          _norns.grid_set_led(dev, x, y, 1)
+        end
+      end
+    end
+  _norns.monome_refresh(dev)
+  end
+end
+
+
+-- define new key input handlers directly on devices, bypassing vports
+-- todo optimize
 local function define_handlers()
-
-  if combiner.rows == 24 then -- 16 then -- TEST
-    port[3].key = function(x, y, s)
-      vgrid.key(x, y, s)
-    end
-
-    port[4].key = function(x, y, s)
-      local y = y + 8
-      vgrid.key(x, y, s)
-    end
-
-  elseif combiner.rows == 8 then
-    port[3].key = function(x, y, s)
-      vgrid.key(x, y, s)
-    end
-
-    port[4].key = function(x, y, s)
-      local x = x + 8
+  for k, v in pairs(grid.devices) do
+    v.key = function(x, y, s)
+      local y = y + settings[k].y - combiner.y_min
+      local x = x + settings[k].x - combiner.x_min
       vgrid.key(x, y, s)
     end
   end
-
 end
 
 
 mod.hook.register("system_post_startup", "combiner post startup", function()
+  
   -- due to update_devices() overwriting vports after mod hook, redefine it
   local old_update_devices = grid.update_devices
   function grid.update_devices()
+    -- print("REDEFINED GRID.UPDATE_DEVICES CALLED")
     old_update_devices()
+    gen_dev_tables()   -- update dcount and dlookup, will probably be used to lookup name/serial and port
     init_virtual()    -- generate virtual interface
-    read_prefs()      -- load rotation and intensity
+    read_prefs()      -- load prefs
   end
+  
 end)
 
 
@@ -395,56 +297,52 @@ function m.key(n, z)
       end
     elseif n == 3 then
       combiner.menu_lvl = 2
-      -- combiner.menu_port = combiner.menu_pos_l1
-      combiner.menu_pos_l2 = 1
+      menu_pos = 1
       m.redraw()
     end
   end
 end
 
 
+-- todo look into settings being baseed on device id rather than 1-indexed
 function m.enc(n, d)
   if n == 2 then
     local d = util.clamp(d, -1, 1)
     if combiner.menu_lvl == 1 then
-      combiner.menu_pos_l1 = util.clamp(combiner.menu_pos_l1 + d, 1, #glist)
-    else
-      combiner.menu_pos_l2 = util.clamp(combiner.menu_pos_l2 + d, 1, #setup_keys)
+      menu_pos = util.clamp(menu_pos + d, 1, 5)
     end
   elseif n == 3 then
-    if combiner.menu_lvl == 2 then
-      -- local port = glist[combiner.menu_pos_l1].device.port -- fn?
-      local port = glookup[combiner.menu_pos_l1]
-      local key = setup_keys[combiner.menu_pos_l2]
-      setup[port][key] = setup[port][key] + d -- TODO ranges + clamp!
-      
-      calc_dimensions() --  may just do when closing menu l2?
-    
-    
-      --   for _, v in ipairs(setup_keys) do
-      -- screen.level(combiner.menu_pos_l2 == pos and 15 or 4)
-      -- screen.move(0, (pos + 1) * 10)
-      -- screen.text(v)
-      -- screen.move(127, (pos + 1) * 10)
-      -- screen.text_right(setup[port][v])
-      -- pos = pos + 1
-      
+    if menu_pos == 1 then
+      editing = util.clamp(editing + d, 1, #dlookup) -- 1-index, (not device id)
+      highlight_grid(dlookup[editing])
+    else
+      local id = dlookup[editing]
+      local key = settings_keys[menu_pos - 1]
+      if key == "x" or key == "y" then
+        d = util.clamp(d, -1, 1) * snap_quantum
+        settings[id][key] = math.max(settings[id][key] + d, 0)
+        calc_dimensions()
+      elseif key == "rot" then
+        d = util.clamp(d, -1, 1) * 3
+        local new_rot = (settings[id][key] - d) % 4
+        settings[id][key] = new_rot
+        calc_dimensions()
+        -- rotation function works for these conditions...
+        if (grid.devices[id].cols == grid.devices[id].rows) or (new_rot == 0) or (new_rot == 2) then
+          _norns.grid_set_rotation(grid.devices[id].dev, settings[id][key])
+        -- but it's busted for non-square 90/270° rotations so we gotta DIY
+        else
+          print("DANGER ZONE")
+          _norns.grid_set_rotation(grid.devices[id].dev, settings[id][key])
+          -- local cols = grid.devices[id].cols
+          -- grid.devices[id].cols = grid.devices[id].rows
+          -- grid.devices[id].rows = cols
+        end
+      elseif key == "lvl" then
+        d = util.clamp(d, -1, 1)
+        settings[id][key] = util.clamp(settings[id][key] + d, 0, 15)
+      end
     end
-  
-  
-  -- if combiner.menu_pos_l1 == 1 then
-  --   combiner.rotation_1 = util.clamp(combiner.rotation_1 - d, -3, 3)
-  --   port[3]:rotation(combiner.rotation_1)
-  -- elseif combiner.menu_pos == 2 then
-  --     combiner.rotation_2 = util.clamp(combiner.rotation_2 - d, -3, 3)
-  --     port[4]:rotation(combiner.rotation_2)
-  -- elseif combiner.menu_pos == 3 then
-  --   combiner.intensity_1 = util.clamp(combiner.intensity_1 + d, 0, 15)
-  --   port[3]:intensity(combiner.intensity_1)
-  -- elseif combiner.menu_pos == 4 then
-  --   combiner.intensity_2 = util.clamp(combiner.intensity_2 + d, 0, 15)
-  --   port[4]:intensity(combiner.intensity_2)
-  -- end
   end
   m.redraw()
 end
@@ -452,118 +350,63 @@ end
 
 function m.redraw()
   screen.clear()
-  -- screen.level(4)
-  -- screen.move(0, 10)
-  -- screen.text("MODS / COMBINER")
+  screen.blend_mode(2)
+  local pos = 1
 
-  -- screen.move(0, 30)
-  -- screen.level(combiner.menu_pos == 1 and 15 or 4)
-  -- screen.text("rotation a")
-  -- screen.move(127, 30)
-  -- screen.text_right(combiner.rotation_1 * 90 .. "°")
+  local index = 1
+  local device = grid.devices[dlookup[editing]]
+  local serial = device.serial or ("Grid id " .. dlookup[editing])
+  local name = device.cols .. "x" .. device.rows
+  screen.level(menu_pos == index and 15 or 4)
+  screen.move(86, 10)
+  screen.text(serial)
+  screen.move(86, 20)
+  screen.text(name)
 
-  -- screen.move(0, 40)
-  -- screen.level(combiner.menu_pos == 2 and 15 or 4)
-  -- screen.text("rotation b")
-  -- screen.move(127, 40)
-  -- screen.text_right(combiner.rotation_2 * 90 .. "°")
-
-  -- screen.move(0, 50)
-  -- screen.level(combiner.menu_pos == 3 and 15 or 4)
-  -- screen.text("intensity a")
-  -- screen.move(127, 50)
-  -- screen.text_right(combiner.intensity_1)
-
-  -- screen.move(0, 60)
-  -- screen.level(combiner.menu_pos == 4 and 15 or 4)
-  -- screen.text("intensity b")
-  -- screen.move(127, 60)
-  -- screen.text_right(combiner.intensity_2)
+  index = 2
+  for _, v in ipairs(settings_keys) do
+    screen.level(menu_pos == index and 15 or 4)
+    screen.move(86, (index + 1) * 10)
+    screen.text(v)
+    screen.move(127, (index + 1) * 10)
+    screen.text_right(settings[dlookup[editing]][v] * (v == "rot" and 90 or 1))
+    index = index + 1
+  end
   
-  if (combiner.menu_lvl or 1) == 1 then
-    screen.level(4)
-    screen.move(0, 10)
-    screen.text("MODS / COMBINER")
-    local pos = 1 -- reset on menu entry?
-    -- for k, v in pairs(port) do
-    --   if port[k].name ~= "none" then -- shows disconnected Grids. What about clones or old Grids?
-    --     screen.move(0, (pos + 2) * 10)
-    --     screen.level(combiner.menu_pos_l1 == (pos) and 15 or 4)
-    --     -- local string = -- maybe strip serial or rename as colsxrows, status, etc...
-    --     screen.text(util.trim_string_to_width("port " .. k .. ": ".. port[k].name, 128))
-    --     pos = pos + 1
-    --   end
-    -- end  
+  screen.level(2)
+  screen.move(81,5)
+  screen.line(81,60)
+  screen.stroke()
+  
+  -- draw tiny Grids!
+  for i = 1, #dlookup do  -- todo only configured/enabled
+    screen.level(editing == i and 5 or 2)
+    local device = grid.devices[dlookup[i]]
+
+    local settings = settings[dlookup[i]]
+    local rotation = settings.rot
+    local rotated = (rotation % 2) ~= 0
+
+    local cols = rotated and device.rows or device.cols 
+    local rows = rotated and device.cols or device.rows
     
-    for i = 1, #glist do
-      -- if port[k].name ~= "none" then -- shows disconnected Grids. What about clones or old Grids?
-        
-        -- local port = glist[combiner.menu_pos_l1].device.port  -- fn?  -- what about disconnected grids?
-        local port = glookup[i]
-        screen.move(0, (pos + 2) * 10)
-        screen.level(combiner.menu_pos_l1 == (pos) and 15 or 4)
-        -- local string = -- maybe strip serial or rename as colsxrows, status, etc...
-        screen.text(util.trim_string_to_width(port .. ": ".. glist[i].name, 128))
-        pos = pos + 1
-      -- end
-    end  
+    local x = settings.x
+    local y = settings.y
     
-  else -- if combiner.menu_lvl == 2 then
-    -- local port = glist[combiner.menu_port].device.port
-    -- local port = glist[combiner.menu_pos_l1].device.port  -- fn?
-    local port = glookup[combiner.menu_pos_l1]
-    
-    screen.level(4)
-    screen.move(0, 10)
-    screen.text(glist[combiner.menu_pos_l1].name)
-    
-    local pos = 1
-    for _, v in ipairs(setup_keys) do
-        screen.level(combiner.menu_pos_l2 == pos and 15 or 4)
-        screen.move(0, (pos + 1) * 10)
-        screen.text(v)
-        screen.move(127, (pos + 1) * 10)
-        screen.text_right(setup[port][v])
-        pos = pos + 1
-      
-      -- for k, v in pairs(setup[port]) do
-      --   screen.level(combiner.menu_pos == pos and 15 or 4)
-      --   screen.move(0, (pos + 2) * 10)
-      --   screen.text(k)
-      --   screen.move(127, (pos + 2) * 10)
-      --   screen.text_right(v)
-      --   pos = pos + 1
-      -- end
+    screen.rect(x, y, cols, rows)
+    screen.fill()
+
+    -- draw tiny little arrows!
+    if cols >= 8 and rows >= 8 then -- allow smaller than 8x8 but no arrows
+      screen.level(15)
+      local glyph_rotated = rotate_xy(glyphs.arrow, rotation)
+      for i = 1, #glyph_rotated do
+        screen.pixel(glyph_rotated[i][1] + x + (cols / 2) - 4, 
+          glyph_rotated[i][2] + y + (rows / 2) - 4)
+      end
+      screen.fill()
     end
-    -- screen.level(combiner.menu_pos == 1 and 15 or 4)
-    -- screen.move(0, 30)
-    -- screen.text("x offset")
-    -- screen.move(127, 30)
-    -- screen.text_right(setup[port].x)
     
-    -- screen.level(combiner.menu_pos == 2 and 15 or 4)
-    -- screen.move(0, 40)
-    -- screen.text("y offet")
-    -- screen.move(127, 40)
-    -- screen.text_right(setup[port].y)
-    
-    -- screen.level(combiner.menu_pos == 3 and 15 or 4)
-    -- screen.move(0, 50)  
-    -- screen.text("hw_rot")
-    -- screen.move(127, 50)
-    -- screen.text_right(setup[port].hw_rot)
-    
-    -- screen.level(combiner.menu_pos == 4 and 15 or 4)
-    -- screen.move(0, 60)
-    -- screen.text("sw_rot")
-    -- screen.move(127, 60)
-    -- screen.text_right(setup[port].sw_rot)
-    
-    -- screen.level(combiner.menu_pos == 5 and 15 or 4)
-    -- screen.move(0, 70)  
-    -- screen.text("intensity")
-    -- screen.move(127, 70)
-    -- screen.text_right(setup[port].intensity)
   end
   
   screen.update()
@@ -571,6 +414,7 @@ end
 
 
 function m.init() -- on menu entry
+  highlight_grid(dlookup[1])
 end
 
 
