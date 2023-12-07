@@ -7,7 +7,7 @@
 A Norns mod to combine two Grids into a single virtual Grid
 
 ### Requirements
-- 2x64 Grids or 2x128 Grids. Let me know if it works with clones?
+- 2x64 Grids or 2x128 Grids (or clone such as NeoTrellis)
 - Norns 231114
 
 ### How to use it
@@ -19,5 +19,5 @@ A Norns mod to combine two Grids into a single virtual Grid
 
 ### Notes
 - LED intensity does not seem to be supported on all Grids.
+- If using a NeoTrellis, each device must have a unique name+serial in SYSTEM>>DEVICES>>GRID. This may require editing your .ino file and re-uploading the firmware.
 - If this doesn't work with your a particular script, it's probably because that script is using `grid.devices` rather than `grid.vports`. Changing this should be a quick fix for script authors but if that's not possible for some reason, just let me know and I can probably find a workaround.
-- I don't believe in testing so godspeed.
