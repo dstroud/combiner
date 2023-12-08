@@ -1,29 +1,23 @@
 -- mod to combine multiple Grids into a single virtual Grid
 -- https://github.com/dstroud/combiner
 
+-- todo ideas:
+-- flip key/led on axis (left/right hand mode)
+-- level remapping
+
 local mod = require 'core/mods'
 local filepath = "/home/we/dust/data/combiner/"
 combiner = {}     -- TODO LOCAL!
 combiner.version = 0.2  -- TODO UPDATE
-combiner.menu_lvl = 1
-menu_pos = 1
--- combiner.rows = 8 -- whh
+dlookup = {} -- lookup grid.devices id
+local menu_pos = 1
+local editing = 1 -- which index in dlookup is being edited
 local snap_quantum = 16
-combiner.rotation_1 = 0
-combiner.rotation_2 = 0
-combiner.intensity_1 = 15
-combiner.intensity_2 = 15
-
-editing = 1 -- which index in dlookup is being edited
-dcount = 0
-dlookup = {} -- lookup vport id for entries in devices. TODO- needs to refresh when devices are updated.
-
--- TODO LOCAL!
 vgrid = grid.connect(1)  -- Virtual Grid -- saves having to set path for setting functions
 port = {}  -- local!
 settings = {}  -- local
-
-glyphs = {"arrow"}-- 0, 1, 2, 3}
+led_routing = {}  -- routing table for virtual>>physical Grids
+local glyphs = {"arrow"}
 glyphs.arrow = {
   {3,1}, {4,1},
   {2,2}, {3,2}, {4,2}, {5,2}, 
@@ -34,15 +28,12 @@ glyphs.arrow = {
 }
 
 local settings_keys = { "x", "y", "rot", "lvl"}
-
-settings_def = {                             -- local
+settings_def = {
   x = {min = -63, max = 63, quantum = 4},
   y = {min = -63, max = 63, quantum = 4},
   rot = {min = 0, max = 3, quantum = 3},
   lvl = {min = 1, max = 15, quantum = 1}
 }
-
-local rot = {0, 3, 2, 1} -- {3, 2, 1, 0, 3, 2, 1}
 
 
 local function read_prefs()
@@ -79,24 +70,49 @@ local function write_prefs(from)
 end
 
 
+-- todo use this for glyph, too probably
+function rotate_pairs(coordinates, cols, rows, rotation)  -- todo local
+  local x, y = coordinates[1], coordinates[2]
+
+  for r = 1, rotation do
+    local rows = (r % 2 == 0) and cols or rows -- flip 'em
+    x, y = rows + 1 - y, x -- 90-degree rotation CW
+  end
+
+  return x, y
+end
+
+
+-- define new key input handlers directly on devices, bypassing vports
+local function define_handlers()
+  for k, v in pairs(grid.devices) do
+    v.key = function(x, y, s)
+      local settings = settings[k]
+      local x, y = rotate_pairs({x, y}, v.cols, v.rows, (settings.rot * 3) % 4)
+      local y = y + settings.y - combiner.y_min
+      local x = x + settings.x - combiner.x_min
+      vgrid.key(x, y, s)
+    end
+  end
+end
+
+
+-- determines overall dimensions for virtual grid
 local function calc_dimensions()
-  local x_min = nil
-  local y_min = nil
-  local x_max = nil
-  local y_max = nil
+  local x_min = nil -- x origin of virtual grid
+  local y_min = nil -- y origin of virtual grid
+  local x_max = nil -- x max of virtual grid
+  local y_max = nil -- y max of virtual grid
     
   for i = 1, #dlookup do -- todo test with 0 configured. Also need enabled/disabled
     local device = grid.devices[dlookup[i]]
     local settings = settings[dlookup[i]]
     local rotation = settings.rot
-    local rotated = (rotation % 2) ~= 0
-    local cols = rotated and device.rows or device.cols 
-    local rows = rotated and device.cols or device.rows
+    local swap = (rotation % 2) ~= 0
+    local cols = swap and device.rows or device.cols 
+    local rows = swap and device.cols or device.rows
     local x = settings.x
     local y = settings.y
-    
-    -- local id = dlookup[i]
-    -- local device = grid.devices[id]
     
     local x = cols + settings.x
     if x >= (x_max or x) then
@@ -107,7 +123,7 @@ local function calc_dimensions()
       x_min = x
     end
     combiner.cols = x_max - x_min
-    combiner.x_min = x_min  -- for relative adjustment
+    combiner.x_min = x_min
     
     local y = rows + settings.y
     if y >= (y_max or y) then 
@@ -118,56 +134,53 @@ local function calc_dimensions()
       y_min = y
     end
     combiner.rows = y_max - y_min
-    combiner.y_min = y_min   -- for relative adjustment
-  end  
+    combiner.y_min = y_min
+  end 
   
   vgrid.cols = combiner.cols
   vgrid.rows = combiner.rows
   print("Combiner: " .. combiner.cols .. "x" .. combiner.rows .. " virtual Grid configured")
-end
-
-
--- x_min and y_min are used to adjust if user didn't set starting offsets to 0
--- may just fake this in mod grid assist views then adjust on menu close
--- wip how to handle physical rotation of non-square grids
-function def_led()    -- to call when making edits to config 
-  -- TODO: move to a coordinate LUT for routing to physical Grids
-  function vgrid:led(x, y, val)
-    for k, v in pairs(grid.devices) do  -- will be only configured ports
-      local x_offset = settings[k].x - combiner.x_min
-      local y_offset = settings[k].y - combiner.y_min
-
-
-      -- local settings = settings[dlookup[i]]
-      -- local rotation = settings.rot
-      -- local rotated = (rotation % 2) ~= 0
   
-      -- local cols = rotated and device.rows or device.cols 
-      -- local rows = rotated and device.cols or device.rows
-      
-      -- local x = settings.x
-      -- local y = settings.y
-    
-    
-      
-      if  x > x_offset and x <= (v.cols + x_offset) 
-      and y > y_offset and y <= (v.rows + y_offset) then
-        _norns.grid_set_led(grid.devices[k].dev, x - x_offset, y - y_offset, val)
-      end
-
+  -- generate led_routing to translate from virtual to physical grids
+  led_routing = {}
+  for x = 1, vgrid.cols do
+    led_routing[x] = {}
+    for y = 1, vgrid.rows do
+      led_routing[x][y] = {}
     end
+  end
+  
+  for i = 1, #dlookup do -- todo test with 0 configured. Also need enabled/disabled devices
+    local id = dlookup[i]
+    local device = grid.devices[id]
+    local settings = settings[id]
+    local x_offset = settings.x
+    local y_offset = settings.y
+    local rotation = settings.rot
+    local swap = (rotation % 2) ~= 0
+    local cols = swap and device.rows or device.cols 
+    local rows = swap and device.cols or device.rows
+    
+    for x_real = 1, cols do
+      for y_real = 1, rows do
+        local x_virtual = x_real + x_offset - x_min
+        local y_virtual = y_real + y_offset - y_min
+        local x_real, y_real = rotate_pairs({x_real, y_real}, cols, rows, rotation)
+        table.insert(led_routing[x_virtual][y_virtual], {id, x_real, y_real})
+      end
+    end
+
   end
 end
 
 
--- at some point we'll likely need to store and retrieve settings values based on device name (with serial #)
+-- device-id indexed
+-- todo at some point we'll likely need to store and retrieve settings values based on device name (with serial #)
 local function gen_dev_tables()
-  dlookup = {}  -- always zap it?
-  dcount = 0
+  dlookup = {}
   for k, v in pairs(grid.devices) do
     local min_dim = math.min(v.cols, v.rows)
     snap_quantum = min_dim < snap_quantum and min_dim or snap_quantum
-    dcount = dcount + 1
     table.insert(dlookup, k)
     settings[k] = {}
     settings[k] = {x = 0, y = 0, rot = 0, lvl = 15}
@@ -194,8 +207,15 @@ local function init_virtual()
     rows = combiner.rows,
   }
 
-  def_led()
+  -- todo optimize
+  function vgrid:led(x, y, val)
+    local routing = led_routing[x][y]
+    for i = 1, #routing do
+      _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val)
+    end
+  end
 
+  -- todo dynamic grid qty handling
   function vgrid:all(val)
     _norns.grid_all_led(grid.devices[dlookup[1]].dev, val)
     _norns.grid_all_led(grid.devices[dlookup[2]].dev, val)
@@ -207,29 +227,22 @@ local function init_virtual()
   end
 
   function vgrid:rotation()
-    -- supported through mod menu... is there a reason to pass through script rotation?
+    -- supported through mod menu
   end
 
-  function vgrid:tilt_enable()
-    -- LOL
+  function vgrid:intensity()
+    -- supported through mod menu
   end
-
-end
-
   
-function rotate_xy(coordinates, rotations)
-  local rotated = {}
-  for _, coord in ipairs(coordinates) do
-    local x, y = coord[1], coord[2]
-    
-    for _ = 1, rotations do
-      x, y = 7 - y, x -- 90-degree rotation CW
-    end
-
-    table.insert(rotated, {x, y})
+  function vgrid:tilt_enable()
   end
 
-  return rotated
+  function vgrid:add()    -- unsure
+  end
+
+  function vgrid:remove() -- unsure
+  end
+  
 end
 
 
@@ -249,19 +262,7 @@ function highlight_grid(id)
 end
 
 
--- define new key input handlers directly on devices, bypassing vports
--- todo optimize
-local function define_handlers()
-  for k, v in pairs(grid.devices) do
-    v.key = function(x, y, s)
-      local y = y + settings[k].y - combiner.y_min
-      local x = x + settings[k].x - combiner.x_min
-      vgrid.key(x, y, s)
-    end
-  end
-end
-
-
+-- todo need to think about how to handle grid-settings mod. Disable?
 mod.hook.register("system_post_startup", "combiner post startup", function()
   
   -- due to update_devices() overwriting vports after mod hook, redefine it
@@ -269,7 +270,7 @@ mod.hook.register("system_post_startup", "combiner post startup", function()
   function grid.update_devices()
     -- print("REDEFINED GRID.UPDATE_DEVICES CALLED")
     old_update_devices()
-    gen_dev_tables()   -- update dcount and dlookup, will probably be used to lookup name/serial and port
+    gen_dev_tables()   -- update dlookup, will probably be used to lookup name/serial and port
     init_virtual()    -- generate virtual interface
     read_prefs()      -- load prefs
   end
@@ -289,18 +290,13 @@ local m = {}
 function m.key(n, z)
   if z == 1 then
     if n == 2 then
-      if combiner.menu_lvl == 2 then
-        combiner.menu_lvl = 1
-        m.redraw()
-      else
-        mod.menu.exit()
-      end
-    elseif n == 3 then
-      combiner.menu_lvl = 2
-      menu_pos = 1
-      m.redraw()
+      mod.menu.exit()
     end
   end
+end
+
+function intensity(id, val)
+  _norns.monome_intensity(grid.devices[id].dev, val)
 end
 
 
@@ -308,9 +304,7 @@ end
 function m.enc(n, d)
   if n == 2 then
     local d = util.clamp(d, -1, 1)
-    if combiner.menu_lvl == 1 then
-      menu_pos = util.clamp(menu_pos + d, 1, 5)
-    end
+    menu_pos = util.clamp(menu_pos + d, 1, 5)
   elseif n == 3 then
     if menu_pos == 1 then
       editing = util.clamp(editing + d, 1, #dlookup) -- 1-index, (not device id)
@@ -319,28 +313,18 @@ function m.enc(n, d)
       local id = dlookup[editing]
       local key = settings_keys[menu_pos - 1]
       if key == "x" or key == "y" then
-        d = util.clamp(d, -1, 1) * snap_quantum
+        d = util.clamp(d, -1, 1) * snap_quantum -- todo not sure this feels good
         settings[id][key] = math.max(settings[id][key] + d, 0)
         calc_dimensions()
       elseif key == "rot" then
-        d = util.clamp(d, -1, 1) * 3
-        local new_rot = (settings[id][key] - d) % 4
+        local d = util.clamp(d, -1, 1) * 3
+        local new_rot = (settings[id][key] + d) % 4
         settings[id][key] = new_rot
         calc_dimensions()
-        -- rotation function works for these conditions...
-        if (grid.devices[id].cols == grid.devices[id].rows) or (new_rot == 0) or (new_rot == 2) then
-          _norns.grid_set_rotation(grid.devices[id].dev, settings[id][key])
-        -- but it's busted for non-square 90/270° rotations so we gotta DIY
-        else
-          print("DANGER ZONE")
-          _norns.grid_set_rotation(grid.devices[id].dev, settings[id][key])
-          -- local cols = grid.devices[id].cols
-          -- grid.devices[id].cols = grid.devices[id].rows
-          -- grid.devices[id].rows = cols
-        end
       elseif key == "lvl" then
-        d = util.clamp(d, -1, 1)
+        local d = util.clamp(d, -1, 1)
         settings[id][key] = util.clamp(settings[id][key] + d, 0, 15)
+        intensity(id, settings[id][key])
       end
     end
   end
@@ -384,7 +368,7 @@ function m.redraw()
     local device = grid.devices[dlookup[i]]
 
     local settings = settings[dlookup[i]]
-    local rotation = settings.rot
+    local rotation = (settings.rot * 3) % 4 -- god I hate this
     local rotated = (rotation % 2) ~= 0
 
     local cols = rotated and device.rows or device.cols 
@@ -396,13 +380,12 @@ function m.redraw()
     screen.rect(x, y, cols, rows)
     screen.fill()
 
-    -- draw tiny little arrows!
+    -- direction arrows
     if cols >= 8 and rows >= 8 then -- allow smaller than 8x8 but no arrows
       screen.level(15)
-      local glyph_rotated = rotate_xy(glyphs.arrow, rotation)
-      for i = 1, #glyph_rotated do
-        screen.pixel(glyph_rotated[i][1] + x + (cols / 2) - 4, 
-          glyph_rotated[i][2] + y + (rows / 2) - 4)
+      for i = 1, #glyphs.arrow do
+        local pixel_x, pixel_y = rotate_pairs({glyphs.arrow[i][1], glyphs.arrow[i][2]}, 6, 6, rotation)
+        screen.pixel(pixel_x + x + (cols / 2) - 4, pixel_y + y + (rows / 2) - 4)
       end
       screen.fill()
     end
