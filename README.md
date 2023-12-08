@@ -21,3 +21,4 @@ A Norns mod to combine two Grids into a single virtual Grid
 - LED intensity does not seem to be supported on all Grids.
 - If using a NeoTrellis, each device must have a unique name+serial in SYSTEM>>DEVICES>>GRID. This may require editing your .ino file and re-uploading the firmware.
 - If this doesn't work with your a particular script, it's probably because that script is using `grid.devices` rather than `grid.vports`. Changing this should be a quick fix for script authors but if that's not possible for some reason, just let me know and I can probably find a workaround.
+- If your settings don't seem to be saved after a rebood, it's probably because you have some other mod installed (such as `grid-settings`) that is setting Grid rotation/intensity. Disable.
