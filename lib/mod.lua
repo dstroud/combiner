@@ -7,24 +7,27 @@
 
 local mod = require 'core/mods'
 local filepath = "/home/we/dust/data/combiner/"
-combiner = {}     -- TODO LOCAL!
+local state = "running"
+local combiner = {}     -- TODO LOCAL!
 combiner.version = 0.2  -- TODO UPDATE
 dlookup = {} -- lookup grid.devices id
+keypresses = 0
 local menu_pos = 1
-local editing = 1 -- which index in dlookup is being edited
+editing_index = 1 -- which index in dlookup is being edited
+-- editing_id = nil -- which id in grid.devices is being edited
 local snap_quantum = 16
-vgrid = grid.connect(1)  -- Virtual Grid -- saves having to set path for setting functions
-port = {}  -- local!
+vgrid = grid.connect(1)  -- Virtual Grid vport
+-- port = {}  -- local!
 settings = {}  -- local
 led_routing = {}  -- routing table for virtual>>physical Grids
 local glyphs = {"arrow"}
-glyphs.arrow = {
-  {3,1}, {4,1},
-  {2,2}, {3,2}, {4,2}, {5,2}, 
+glyphs.arrow = {  -- felt cute, might delete later
+                {3,1}, {4,1},
+         {2,2}, {3,2}, {4,2}, {5,2}, 
   {1,3}, {2,3}, {3,3}, {4,3}, {5,3}, {6,3}, 
-  {3,4}, {4,4}, 
-  {3,5}, {4,5}, 
-  {3,6}, {4,6}, 
+                {3,4}, {4,4}, 
+                {3,5}, {4,5}, 
+                {3,6}, {4,6}, 
 }
 
 local settings_keys = { "x", "y", "rot", "lvl"}
@@ -73,32 +76,81 @@ end
 -- todo use this for glyph, too probably
 function rotate_pairs(coordinates, cols, rows, rotation)  -- todo local
   local x, y = coordinates[1], coordinates[2]
-
   for r = 1, rotation do
     local rows = (r % 2 == 0) and cols or rows -- flip 'em
     x, y = rows + 1 - y, x -- 90-degree rotation CW
   end
-
   return x, y
 end
 
 
--- define new key input handlers directly on devices, bypassing vports
-local function define_handlers()
-  for k, v in pairs(grid.devices) do
-    v.key = function(x, y, s)
-      local settings = settings[k]
-      local x, y = rotate_pairs({x, y}, v.cols, v.rows, (settings.rot * 3) % 4)
-      local y = y + settings.y - combiner.y_min
-      local x = x + settings.x - combiner.x_min
-      vgrid.key(x, y, s)
-    end
-  end
-end
+-- function key_handlers()
+--   if state == "running" then
+--     if norns.state.script ~= "" then  -- translate physical Grid keypresses to virtual layout
+--       print("setting virtual key handlers")
+--       for k, v in pairs(grid.devices) do
+--         v.key = function(x, y, s)
+--           local settings = settings[k]
+--           local x, y = rotate_pairs({x, y}, v.cols, v.rows, (settings.rot * 3) % 4)
+--           local y = y + settings.y - combiner.y_min
+--           local x = x + settings.x - combiner.x_min
+--           vgrid.key(x, y, s)
+--         end
+--       end
+--     else  -- clear handlers
+--       print("clearing key handlers")
+--       for k, v in pairs(grid.devices) do
+--         v.key = nil
+--       end
+--     end
+--   else -- raw keypresses are used to configure layout while mod menu is open
+--     print("setting mod menu key handlers")
+--     for k, v in pairs(grid.devices) do
+--       v.key = function(x, y, s)
+--       local device = grid.devices[k]
+--       local settings = settings[k]
+--       local cols = device.cols
+--       local rows = device.rows
+--         if s == 1 then
+--           print("Grid ID " .. k .. ": " .. x, y)
+--         -- elseif s == 0 then
+          
+--           -- print ("setting editing_index = " .. k)
+--           editing_index = tab.key(dlookup, k)
+          
+--           -- todo change menu as well
+          
+          
+--           if x == 1 and y == 1 then
+--             settings.rot = 0
+--           elseif x == 1 and y == cols then
+--             settings.rot = 1
+--           elseif x == cols and y == rows then
+--             settings.rot = 2
+--           elseif x == 1 and y == rows then
+--             settings.rot = 3
+--           end
+        
+          
+--           grid_viz()
+--           m.redraw()  -- can't call because out of scope?
+--         end
+        
+        
+--         -- local settings = settings[k]
+--         -- local x, y = rotate_pairs({x, y}, v.cols, v.rows, (settings.rot * 3) % 4)
+--         -- local y = y + settings.y - combiner.y_min
+--         -- local x = x + settings.x - combiner.x_min
+--         -- vgrid.key(x, y, s)
+        
+--       end -- of v.key function
+--     end
+--   end
+-- end
 
 
--- determines overall dimensions for virtual grid
-local function calc_dimensions()
+-- determines overall dimensions for virtual grid and generates LED routing table
+local function calc_layout()
   local x_min = nil -- x origin of virtual grid
   local y_min = nil -- y origin of virtual grid
   local x_max = nil -- x max of virtual grid
@@ -139,7 +191,7 @@ local function calc_dimensions()
   
   vgrid.cols = combiner.cols
   vgrid.rows = combiner.rows
-  print("Combiner: " .. combiner.cols .. "x" .. combiner.rows .. " virtual Grid configured")
+  -- print("Combiner: " .. combiner.cols .. "x" .. combiner.rows .. " virtual Grid configured")
   
   -- generate led_routing to translate from virtual to physical grids
   led_routing = {}
@@ -174,7 +226,7 @@ local function calc_dimensions()
 end
 
 
--- device-id indexed
+-- runs at script post-init. This means changes to config will require a script relaunch
 -- todo at some point we'll likely need to store and retrieve settings values based on device name (with serial #)
 local function gen_dev_tables()
   dlookup = {}
@@ -192,7 +244,7 @@ end
 -- todo think about what we actually want here vs elsewhere now that we're not using vports
 local function init_virtual()
 
-  calc_dimensions() -- check if needed here
+  calc_layout() -- check if needed here
   
   vgrid.name = "virtual"
   vgrid.rows = combiner.rows
@@ -235,34 +287,63 @@ local function init_virtual()
   end
   
   function vgrid:tilt_enable()
+    -- todo
   end
 
-  function vgrid:add()    -- unsure
-  end
+  -- function vgrid:add()    -- unsure
+  -- end
 
-  function vgrid:remove() -- unsure
+  -- function vgrid:remove() -- unsure
+  -- end
+
+end
+
+
+-- Visuals drawn on physical grids to assist with config
+function grid_viz()
+  -- print("grid_viz called")
+  if state == "grid_viz" then
+
+    -- highlight Grid we're editing_index
+    local id = dlookup[editing_index]
+    for k, v in pairs(grid.devices) do
+      local dev = v.dev
+      _norns.grid_all_led(dev, k == id and 2 or 0)
+    end
+
+    -- draw border around virtual grid
+    local rows = vgrid.rows
+    local cols = vgrid.cols
+    for x = 1, cols do
+      for y = 1, rows do
+        if x == 1 or x == cols or y == 1 or y == rows then
+          vgrid:led(x, y, 15)
+        end
+      end
+    end
+    
+    vgrid:refresh()
   end
+end
+
+
+-- set Grid key handler while in mod menu (revert on close)
+function grid_key()
+  -- print("redefining vgrid.key")
+  -- old_vgrid_key = vgrid.key -- what if not present?
+  
+  -- function vgrid.key(x,y,z)
+    -- if z == 1 then
+      -- print(x, y)
+    -- end
+  -- end
+  
+-- set temporary key handler callbacks for physical grids while in menu
   
 end
 
 
-function highlight_grid(id)
-  for k, v in pairs(grid.devices) do
-    local dev = v.dev
-    _norns.grid_all_led(dev, 0)
-    if k == id then
-      for x = 1, v.cols do
-        for y = 1, v.rows do
-          _norns.grid_set_led(dev, x, y, 1)
-        end
-      end
-    end
-  _norns.monome_refresh(dev)
-  end
-end
-
-
--- todo need to think about how to handle grid-settings mod. Disable?
+    -- todo need to think about how to handle grid-settings mod. Disable?
 mod.hook.register("system_post_startup", "combiner post startup", function()
   
   -- due to update_devices() overwriting vports after mod hook, redefine it
@@ -274,13 +355,13 @@ mod.hook.register("system_post_startup", "combiner post startup", function()
     init_virtual()    -- generate virtual interface
     read_prefs()      -- load prefs
   end
-  
+  -- state = "running"
 end)
 
 
 -- requires norns 231114
 mod.hook.register("script_post_init", "combiner post init", function()
-  define_handlers()
+  key_handlers()
 end)
 
 
@@ -307,26 +388,27 @@ function m.enc(n, d)
     menu_pos = util.clamp(menu_pos + d, 1, 5)
   elseif n == 3 then
     if menu_pos == 1 then
-      editing = util.clamp(editing + d, 1, #dlookup) -- 1-index, (not device id)
-      highlight_grid(dlookup[editing])
+      editing_index = util.clamp(editing_index + d, 1, #dlookup) -- 1-index, (not device id)
+
     else
-      local id = dlookup[editing]
+      local id = dlookup[editing_index]
       local key = settings_keys[menu_pos - 1]
       if key == "x" or key == "y" then
         d = util.clamp(d, -1, 1) * snap_quantum -- todo not sure this feels good
         settings[id][key] = math.max(settings[id][key] + d, 0)
-        calc_dimensions()
+        calc_layout()
       elseif key == "rot" then
         local d = util.clamp(d, -1, 1) * 3
         local new_rot = (settings[id][key] + d) % 4
         settings[id][key] = new_rot
-        calc_dimensions()
+        calc_layout()
       elseif key == "lvl" then
         local d = util.clamp(d, -1, 1)
         settings[id][key] = util.clamp(settings[id][key] + d, 0, 15)
         intensity(id, settings[id][key])
       end
     end
+    grid_viz() -- works but also fires unnecessarily
   end
   m.redraw()
 end
@@ -338,8 +420,8 @@ function m.redraw()
   local pos = 1
 
   local index = 1
-  local device = grid.devices[dlookup[editing]]
-  local serial = device.serial or ("Grid id " .. dlookup[editing])
+  local device = grid.devices[dlookup[editing_index]]
+  local serial = device.serial or ("Grid id " .. dlookup[editing_index])
   local name = device.cols .. "x" .. device.rows
   screen.level(menu_pos == index and 15 or 4)
   screen.move(86, 10)
@@ -353,7 +435,7 @@ function m.redraw()
     screen.move(86, (index + 1) * 10)
     screen.text(v)
     screen.move(127, (index + 1) * 10)
-    screen.text_right(settings[dlookup[editing]][v] * (v == "rot" and 90 or 1))
+    screen.text_right(settings[dlookup[editing_index]][v] * (v == "rot" and 90 or 1))
     index = index + 1
   end
   
@@ -364,7 +446,7 @@ function m.redraw()
   
   -- draw tiny Grids!
   for i = 1, #dlookup do  -- todo only configured/enabled
-    screen.level(editing == i and 5 or 2)
+    screen.level(editing_index == i and 5 or 2)
     local device = grid.devices[dlookup[i]]
 
     local settings = settings[dlookup[i]]
@@ -397,13 +479,152 @@ end
 
 
 function m.init() -- on menu entry
-  highlight_grid(dlookup[1])
+  print("Menu entered")
+  if norns.state.script == "" then
+    print("No script detected, drawing grid viz")
+    state = "grid_viz"
+  else
+    print("Script detected, NOT drawing grid viz")
+    state = "no_grid_viz"
+  end
+  grid_viz()
+  key_handlers()
 end
 
 
 function m.deinit() -- on menu exit
+  if state == "grid_viz" then
+    vgrid:all(0)
+    vgrid:refresh()
+  end
+  state = "running"
   write_prefs()
+  key_handlers()
 end
 
 
 mod.menu.register(mod.this_name, m)
+
+
+function key_handlers()
+  if state == "running" then
+    if norns.state.script ~= "" then  -- translate physical Grid keypresses to virtual layout
+      print("setting virtual key handlers")
+      for k, v in pairs(grid.devices) do
+        v.key = function(x, y, s)
+          local settings = settings[k]
+          local x, y = rotate_pairs({x, y}, v.cols, v.rows, (settings.rot * 3) % 4)
+          local y = y + settings.y - combiner.y_min
+          local x = x + settings.x - combiner.x_min
+          vgrid.key(x, y, s)
+        end
+      end
+    else  -- clear handlers
+      print("clearing key handlers")
+      for k, v in pairs(grid.devices) do
+        v.key = nil
+      end
+    end
+  else -- raw keypresses are used to configure layout while mod menu is open
+    print("setting mod menu key handlers")
+
+    local rotate = false
+    local join_coords = {}
+    
+    for k, v in pairs(grid.devices) do
+      v.key = function(x, y, s)
+      local device = grid.devices[k]  -- this is dumb why does this work
+      local settings = settings[k]
+      local cols = device.cols        -- why not v.cols???
+      local rows = device.rows
+        if s == 1 then
+          -- print("Grid ID " .. k .. ": " .. x, y)
+          
+          editing_index = tab.key(dlookup, k)
+
+          if keypresses == 0 then
+            rotate = true
+          else
+            rotate = false
+          end
+          keypresses = keypresses + 1
+          
+          -- set join_coords
+          if keypresses == 1 then
+            
+            -- 1. rotate from physical to virtual oriantation
+            local x, y = rotate_pairs({x, y}, cols, rows, (settings.rot * 3) % 4)
+
+            -- 2. adjust next Grid's origin depending on corner
+            local rotation = settings.rot
+            local swap = (rotation % 2) ~= 0
+            local cols = swap and device.rows or device.cols 
+            local rows = swap and device.cols or device.rows
+            if x == 1 and y == 1 then
+              x = x - 1
+              y = y - 1
+            elseif x == cols and y == 1 then
+              y = y - 1
+            elseif x == cols and y == rows then
+                           
+            elseif x == 1 and y == rows then
+              x = x -1
+            end
+            
+            -- 3. apply offsets
+            local x = x + settings.x
+            local y = y + settings.y
+            
+            -- PROBLEM: source grid can be changed after this!
+            -- need to either pass source grid ID and process on keypress 2 or...
+            -- prevent any changes while keypress > 0 (prob easier)
+            join_coords = {x, y}
+          
+          elseif keypresses == 2 then
+            
+            -- immediately rotate (todo shared code)
+            -- todo only rotate and process join if it's a cordner
+            if x == 1 and y == 1 then
+              settings.rot = 0
+            elseif x == cols and y == 1 then
+              settings.rot = 1
+            elseif x == cols and y == rows then
+              settings.rot = 2
+            elseif x == 1 and y == rows then
+              settings.rot = 3
+            end
+            
+            x, y = join_coords[1], join_coords[2]
+            -- print("new coordinates = " .. x, y)
+            settings.x = x
+            settings.y = y
+          
+          end
+          
+        elseif s == 0 then
+          keypresses = math.max(keypresses - 1, 0)
+          if keypresses > 1 then
+            rotate = false
+          end
+
+          if rotate == true then
+            if x == 1 and y == 1 then
+              settings.rot = 0
+            elseif x == cols and y == 1 then
+              settings.rot = 1
+            elseif x == cols and y == rows then
+              settings.rot = 2
+            elseif x == 1 and y == rows then
+              settings.rot = 3
+            end
+            rotate = false
+          end
+
+        end
+        calc_layout()
+        grid_viz()
+        m.redraw()
+      end -- of v.key function
+    end
+  end
+end
