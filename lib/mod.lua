@@ -1,16 +1,16 @@
 -- mod to combine multiple Grids into a single virtual Grid
 -- https://github.com/dstroud/combiner
 
--- TODO fix: test with no grids
---          limit where grids can be touched
-
+-- TODO fix:
 
 -- TODO ideas:
--- fine snap quantum (and limit to min of 4)
+-- on-screen virtual grid (no device required)
+-- navigation of virtual grid by device + pmap param
+-- display calculated grid size
+-- ripples!
 -- flip grid on axis (left/right hand mode)
 -- gamma/level curves
 -- m-m-M-MEGAGRID
--- define virtual size and add some way of navigating via smaller grid (pmap an x/y param?)
 
 local mod = require 'core/mods'
 local filepath = "/home/we/dust/data/combiner/"
@@ -44,11 +44,10 @@ local function read_prefs()
   if util.file_exists(filepath.."prefs.data") then
     prefs = tab.load(filepath.."prefs.data")
     print('table >> read: ' .. filepath.."prefs.data")
-    if (prefs.version or 0) >= 0.2 then -- TODO adjust for breaking changes
+    if (prefs.version or 0) >= 0.2 then -- TODO adjust for breaking changes!
       dcache = prefs.dcache
       
-      -- apply settings to matching device names
-      for i = 1, #dproperties do
+      for i = 1, #dproperties do        -- apply settings to matching device names
         for cached_name, tab in pairs(dcache) do
           if dproperties[i].name == cached_name then
             for k, v in pairs(tab) do
@@ -56,7 +55,7 @@ local function read_prefs()
             end
           end
         end
-        intensity(dproperties[i].id, dproperties[i].lvl) -- todo confirm only place needed
+        intensity(dproperties[i].id, dproperties[i].lvl)
       end
   
     end
@@ -79,13 +78,49 @@ local function write_prefs(from)
 end
 
 
-function rotate_pairs(coordinates, cols, rows, rotation)  -- todo local
+-- running n times doesn't seem particularly efficient
+local function rotate_pairs(coordinates, cols, rows, rotation)
   local x, y = coordinates[1], coordinates[2]
   for r = 1, rotation do
     local rows = (r % 2 == 0) and cols or rows -- flip 'em
     x, y = rows + 1 - y, x -- 90-degree rotation CW
   end
   return x, y
+end
+
+
+-- Generate the virtual device
+-- called by update_devices (grids are plugged/unplugged, vports are changed)
+-- also called after system hook and when rows/cols are changed
+local function init_virtual(cols, rows)
+  -- print("init_virtual Grid CALLED")
+  if ((vgrid.cols or 0) ~= cols) or ((vgrid.rows or 0) ~= rows) then
+  -- print("init_virtual Grid PROCESSED")
+    local size = tostring(cols * rows)
+    local serial = string.sub("m0000000", 1, 8 - #size) .. size
+    
+    vgrid.name = "virtual " .. serial
+    vgrid.rows = rows or 0
+    vgrid.cols = cols or 0
+  
+    vgrid.device = {
+      id = 1,
+      port = 1,
+      name = vgrid.name,
+      serial = serial,
+      -- TODO how to generate dev userdata or point to faux device table?
+      -- dev = NA, @tparam userdata dev : opaque pointer to device.
+      dev = dev,
+      cols = vgrid.cols,
+      rows = vgrid.rows,
+    }
+  
+    -- simulate Grid removal/add for script callbacks to detect cols/rows changes
+    if grid.remove ~= nil then grid.remove(vgrid.device) end
+    if grid.add ~= nil then grid.add(vgrid.device) end
+    
+  end
+  
 end
 
 
@@ -96,7 +131,7 @@ local function gen_layout()
   local x_max = nil -- x max of virtual grid
   local y_max = nil -- y max of virtual grid
   local enabled = false -- flag to wipe cols/rows if no Grids are enabled
-  for i = 1, #dproperties do -- todo test with 0 configured. Also need enabled/disabled
+  for i = 1, #dproperties do
     if dproperties[i].enabled == true then
       enabled = true
       local dproperties = dproperties[i]
@@ -131,21 +166,10 @@ local function gen_layout()
     end
   end 
   
-  print("gen_layout enabled = " .. tostring(enabled))
   -- extra check to reset cols/rows if all Grids are disabled/unplugged
-  -- todo is this even needed? temporary storage but could init vgrid.cols in global scope
-  -- ISSUE: init_virtual runs after this and just takes combiner.cols
-  -- vgrid.cols = enabled and (combiner.cols or 0) or 0
-  -- vgrid.rows = enabled and (combiner.rows or 0) or 0
-  -- TODO REFACTOR INTERACTION BETWEEN THIS FUNCTION AND INIT_VIRTUAL
   combiner.cols = enabled and (combiner.cols or 0) or 0
-  combiner.rows = enabled and (combiner.rows or 0) or 0  
-  vgrid.cols = combiner.cols
-  vgrid.rows = combiner.rows
-  
-  
-  print("gen_layout vgrid.cols/rows " .. vgrid.cols, vgrid.rows)
-  -- print("Combiner: " .. combiner.cols .. "x" .. combiner.rows .. " virtual Grid configured")
+  combiner.rows = enabled and (combiner.rows or 0) or 0
+  init_virtual(combiner.cols, combiner.rows)
   
   -- generate led_routing to translate from virtual to physical grids
   led_routing = {}
@@ -156,10 +180,8 @@ local function gen_layout()
     end
   end
   
-  print("debug a #dproperties = " .. #dproperties)
   for i = 1, #dproperties do -- todo test with 0 configured. Also need enabled/disabled devices
     if dproperties[i].enabled == true then
-      -- ISSUE: dproperties is getting disabled at some point here
       local dproperties = dproperties[i]
       local x_offset = dproperties.x
       local y_offset = dproperties.y
@@ -179,8 +201,6 @@ local function gen_layout()
     end
   end
   
-  print("led_routing count gen_layout: " .. #led_routing)
-  -- tab.print(led_routing)
 end
 
 
@@ -188,10 +208,8 @@ local function gen_dproperties()
   dproperties = {}
   for k, v in pairs(grid.devices) do
     local min_dim = math.min(v.cols, v.rows)
-    snap_quantum = math.max(min_dim, 4)
 
-    -- todo: duplicate name check and append id if needed (NeoTrellis)
-    -- ISSUE: this is defaulting settings that haven't been cached yet! (like enabled)
+    -- TODO: duplicate name check and maybe append id if needed (NeoTrellis)
     table.insert(dproperties, 
       {id = v.id,
         name = v.name,
@@ -200,11 +218,8 @@ local function gen_dproperties()
         cols = v.cols,
         rows = v.rows,
         dev = v.dev,
-        -- description = v.cols .. "x" .. v.rows, -- todo maybe key count is better (rotation!)
         description = v.cols * v.rows,
         port = v.port,
-        
-        -- defaults
         x = 0,
         y = 0,
         rot = 0,
@@ -215,19 +230,18 @@ local function gen_dproperties()
 end
 
 
--- set virtual grid functions; while in menus, suspend calls from scripts
+-- set virtual grid functions
 local function grid_functions()
   
   if state == "running" then
-    -- nil faux menu functions (not really necessary?)
-    combiner.led = nil
+    combiner.led = nil  -- probably unnecessary
     combiner.all = nil
     combiner.refresh = nil
     
-   -- todo optimize
+   -- TODO optimize
     function vgrid:led(x, y, val)
-      if led_routing[x] then -- optional, in case script sends invalid coords
-        local routing = led_routing[x][y] or {}
+      if led_routing[x] then -- optional but costly? in case script sends invalid coords
+        local routing = led_routing[x][y] or {} -- same
         for i = 1, #routing do
           _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val)
         end
@@ -235,25 +249,19 @@ local function grid_functions()
     end
   
     function vgrid:all(val)
-      for i = 1, #dproperties do
-        _norns.grid_all_led(dproperties[i].dev, val)
-      end
+      for i = 1, #dproperties do _norns.grid_all_led(dproperties[i].dev, val) end
     end
   
     function vgrid:refresh()
-      for i = 1, #dproperties do      
-        _norns.monome_refresh(dproperties[i].dev)
-      end
+      for i = 1, #dproperties do _norns.monome_refresh(dproperties[i].dev) end
     end
   
     function vgrid:rotation() end
     function vgrid:intensity() end
-    function vgrid:tilt_enable() end  -- todo
+    function vgrid:tilt_enable() end  --TODO?
 
-  -- alternate functions are used while in menu so script doesn't interfere
+  -- alternate Grid functions are used while in menu (so script doesn't interfere)
   elseif state == "menu" then
-    print("setting grid led functions for menu")
-    -- block real Grid functions and restore on deinit
     function vgrid:led(x, y, val) end
     function vgrid:all(val) end
     function vgrid:refresh() end
@@ -263,7 +271,7 @@ local function grid_functions()
     
     -- use faux Grid functions while menu is open
     function combiner:led(x, y, val)
-      if led_routing[x] then -- optional, in case script sends invalid coords
+      if led_routing[x] then
         local routing = led_routing[x][y] or {}
         for i = 1, #routing do
           _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val)
@@ -272,37 +280,14 @@ local function grid_functions()
     end
 
     function combiner:all(val)
-      for i = 1, #dproperties do        
-        _norns.grid_all_led(dproperties[i].dev, val)
-      end
+      for i = 1, #dproperties do _norns.grid_all_led(dproperties[i].dev, val) end
     end
   
     function combiner:refresh()
-      for i = 1, #dproperties do
-        _norns.monome_refresh(dproperties[i].dev)
-      end
+      for i = 1, #dproperties do _norns.monome_refresh(dproperties[i].dev) end
     end
       
   end
-end
-
-
--- Generate the virtual device
--- called when grids are plugged/unplugged, grid vports are changed, and once at startup after system hook
--- todo either just call at global scope instead of every time a device is updated, or maybe only have it get created/added if rows and cols are >0
-local function init_virtual()
-  vgrid.name = "virtual"
-  vgrid.rows = combiner.rows or 0
-  vgrid.cols = combiner.cols or 0
-  vgrid.device = {  -- generate just in case some script needs this
-    id = 1,
-    port = 1,
-    name = "virtual",
-    serial = "V0000001",
-    -- dev = NA, @tparam userdata dev : opaque pointer to device.
-    cols = combiner.cols or 0,
-    rows = combiner.rows or 0,
-  }
 end
 
 
@@ -310,20 +295,17 @@ end
 function grid_viz()
   if state == "menu" then
 
-    -- highlight Grid we're editing
     if #dproperties > 0 then
       local id = dproperties[editing_index].id
-      for k, v in pairs(grid.devices) do
+      for k, v in pairs(grid.devices) do -- highlight Grid we're editing
         _norns.grid_all_led(v.dev, k == id and 2 or 0)
       end
   
-      -- draw border around virtual grid
       local rows = vgrid.rows
       local cols = vgrid.cols
-      for x = 1, cols do
+      for x = 1, cols do      -- draw border around virtual grid
         for y = 1, rows do
           if x == 1 or x == cols or y == 1 or y == rows then
-            -- print("combiner:led to vcoords " .. x, y )
             combiner:led(x, y, 15)
           end
         end
@@ -335,9 +317,7 @@ function grid_viz()
 end
 
 
-function intensity(id, val)
-  _norns.monome_intensity(grid.devices[id].dev, val)
-end
+function intensity(id, val) _norns.monome_intensity(grid.devices[id].dev, val) end
 
 
 -- updates when any device config is changed
@@ -351,61 +331,72 @@ function update_cache()
       rot = dproperties[device_idx].rot,
       enabled = dproperties[device_idx].enabled
     }
-    print("caching " .. name .. ":")
-    -- tab.print(saved)
     dcache[name] = {}
     dcache[name] = saved
   end
 end
 
 
--- system mod menu for settings
-local m = {}
+local m = {} -- system mod menu for settings
 
 function m.key(n, z)
-  if z == 1 then
-    if n == 2 then
-      mod.menu.exit()
-    elseif n == 3 then
-      dproperties[editing_index].enabled = not dproperties[editing_index].enabled
-      gen_layout()  -- will update vgrid rows/cols
-      grid_viz()
-      m.redraw()
-      write_prefs()
+  if keypresses == 0 then  
+    if z == 1 then
+      if n == 1 then
+        snap_quantum = 1
+      elseif n == 2 then
+        mod.menu.exit()
+      elseif n == 3 then
+        dproperties[editing_index].enabled = not dproperties[editing_index].enabled
+        gen_layout()
+        grid_viz()
+        m.redraw()
+        write_prefs()
+      end
+    elseif z == 0 and n == 1 then
+      snap_quantum = 4
     end
   end
 end
 
 
 function m.enc(n, d)
-  if n == 2 then
-    local d = util.clamp(d, -1, 1)
-    menu_pos = util.clamp(menu_pos + d, 1, #menu_properties + 1)
-  elseif n == 3 then
-    if menu_pos == 1 then
-      editing_index = util.clamp(editing_index + d, 1, #dproperties)
-    else
-      local dproperties = dproperties[editing_index]
-      local key = menu_properties[menu_pos - 1]
-      if key == "x" or key == "y" then
-        d = util.clamp(d, -1, 1) * snap_quantum -- todo K1 for fine control
-        dproperties[key] = math.max(dproperties[key] + d, 0)
-        gen_layout()
-      elseif key == "rot" then
-        local d = util.clamp(d, -1, 1) * 3
-        local new_rot = (dproperties[key] + d) % 4
-        dproperties[key] = new_rot
-        gen_layout()
-      elseif key == "lvl" then
-        local d = util.clamp(d, -1, 1)
-        dproperties[key] = util.clamp(dproperties[key] + d, 0, 15)
-        intensity(dproperties.id, dproperties[key])
+  if keypresses == 0 then
+    if n == 2 then
+      local d = util.clamp(d, -1, 1)
+      menu_pos = util.clamp(menu_pos + d, 1, #menu_properties + 1)
+    elseif n == 3 then
+      if menu_pos == 1 then
+        editing_index = util.clamp(editing_index + d, 1, #dproperties)
+      else
+        local dproperties = dproperties[editing_index]
+        local key = menu_properties[menu_pos - 1]
+        if key == "x" or key == "y" then
+          local d = util.clamp(d, -1, 1) * snap_quantum
+          local snapped_coord = (math.floor(math.max(dproperties[key], 0) / snap_quantum + 0.5) * snap_quantum)
+          if (d > 0 and snapped_coord > dproperties[key]) 
+          or (d < 0 and snapped_coord < dproperties[key]) then
+            dproperties[key] = snapped_coord
+          else
+            dproperties[key] = snapped_coord + d
+          end
+          gen_layout()
+        elseif key == "rot" then
+          local d = util.clamp(d, -1, 1) * 3
+          local new_rot = (dproperties[key] + d) % 4
+          dproperties[key] = new_rot
+          gen_layout()
+        elseif key == "lvl" then
+          local d = util.clamp(d, -1, 1)
+          dproperties[key] = util.clamp(dproperties[key] + d, 0, 15)
+          intensity(dproperties.id, dproperties[key])
+        end
+      write_prefs()
       end
-    write_prefs()
+      grid_viz()
     end
-    grid_viz()
+    m.redraw()
   end
-  m.redraw()
 end
 
 
@@ -413,8 +404,10 @@ function m.redraw()
   screen.clear()
   screen.blend_mode(2)
   local pos = 1
-
+  local vcols = vgrid.cols
+  local vrows = vgrid.rows
   local index = 1
+  
   if #dproperties == 0 then
     screen.level(10)
     screen.move(64,40)
@@ -442,30 +435,29 @@ function m.redraw()
     end
     
     screen.level(2)
-    screen.move(81,5)
-    screen.line(81,60)
+    screen.move(81,0)
+    screen.line(81,63)
     screen.stroke()
     
-    
     -- draw vgrid border
-    if vgrid.cols > 0 and vgrid.rows > 0 then
-      local x_min = combiner.x_min or 0  -- again should just init these somewhere
+    if vcols > 0 and vrows > 0 then
+      local x_min = combiner.x_min or 0
       local y_min = combiner.y_min or 0
     
       screen.level(2)
       screen.move(x_min, y_min + 1)
-      screen.line(x_min + vgrid.cols, y_min + 1)
-      screen.line(x_min + vgrid.cols, y_min + vgrid.rows)
-      screen.line(x_min + 1, y_min + vgrid.rows)
+      screen.line(x_min + vcols, y_min + 1)
+      screen.line(x_min + vcols, y_min + vrows)
+      screen.line(x_min + 1, y_min + vrows)
       screen.line(x_min + 1, y_min)
       screen.stroke()
     end
   
     -- draw individual grids
-    for i = 1, #dproperties do  -- todo only configured/enabled
+    for i = 1, #dproperties do
       local dproperties = dproperties[i]
       if dproperties.enabled then
-        local rotation = (dproperties.rot * 3) % 4  -- feels bad
+        local rotation = (dproperties.rot * 3) % 4
         local rotated = (rotation % 2) ~= 0
     
         local cols = rotated and dproperties.rows or dproperties.cols 
@@ -474,7 +466,7 @@ function m.redraw()
         local x_offset = dproperties.x
         local y_offset = dproperties.y
     
-        screen.level(editing_index == i and 6 or 2)
+        screen.level(editing_index == i and 8 or 2)
         screen.rect(x_offset, y_offset, cols, rows)
         screen.fill()
     
@@ -490,6 +482,13 @@ function m.redraw()
       end
       
     end
+    
+    -- overlay vgrid dimensions
+    if vcols > 0 and vrows > 0 then
+      screen.level(4)
+      screen.move(76, 60)
+      screen.text_right(vcols .. "x" .. vrows)
+    end
   end
   
   screen.update()
@@ -497,7 +496,6 @@ end
 
 
 function m.init() -- on menu entry
-  print("Menu entered")
   state = "menu"
   grid_functions()
   grid_viz()
@@ -507,7 +505,7 @@ end
 
 function m.deinit() -- on menu exit
   state = "running"
-  grid_functions()  -- re-enable vgrid functions
+  grid_functions()
   write_prefs()
   key_handlers()
   vgrid:all(0)
@@ -521,31 +519,28 @@ mod.menu.register(mod.this_name, m)
 
 function key_handlers()
   if state == "running" then
-    if norns.state.script ~= "" then  -- translate physical Grid keypresses to virtual layout
-      -- print("setting virtual key handlers")
+    if norns.state.script ~= "" then
       for i = 1, #dproperties do
-        -- BIG TODO: are these getting set even on disabled devices? I think so. FIX IT.
         local dproperties = dproperties[i]
-        
-        grid.devices[dproperties.id].key = function(x, y, s)
-          if vgrid.key ~= nil then  -- prevents error if script has no key callback
-            local x, y = rotate_pairs({x, y}, dproperties.cols, dproperties.rows, (dproperties.rot * 3) % 4)
-            local y = y + dproperties.y - combiner.y_min
-            local x = x + dproperties.x - combiner.x_min
-            vgrid.key(x, y, s)
+        if dproperties.enabled then -- translate physical Grid keypresses to virtual layout
+          grid.devices[dproperties.id].key = function(x, y, s)
+            if vgrid.key ~= nil then  -- prevents keypress errors if script has no key callback
+              local x, y = rotate_pairs({x, y}, dproperties.cols, dproperties.rows, (dproperties.rot * 3) % 4)
+              local y = y + dproperties.y - combiner.y_min
+              local x = x + dproperties.x - combiner.x_min
+              vgrid.key(x, y, s)
+            end
           end
+        else -- clear *device* handlers so script can use this Grid via *vport* handlers
+          grid.devices[dproperties.id].key = nil
         end
-      
       end
-    else  -- clear handlers
-      -- print("clearing key handlers")
-      for i = 1, #dproperties do
-        grid.devices[dproperties[i].id].key = nil
-      end
+    else -- no scipt: clear device handlers (vport handlers still available)
+      for i = 1, #dproperties do grid.devices[dproperties[i].id].key = nil end
     end
-  -- all Grids get handlers while in the menu- even disabled ones (so we can touch-enable them)
+    
+  -- ALL Grids get handlers while in the menu- even disabled ones (so we can touch-enable them)
   elseif state == "menu" then
-    -- print("setting mod menu key handlers")
     local rotate = false
     local join_coords = {}
     
@@ -559,22 +554,17 @@ function key_handlers()
       return(rot)
     end
     
-    -- note: this 
     for i = 1, #dproperties do
       local dproperties = dproperties[i]
       local cols = dproperties.cols
       local rows = dproperties.rows
       grid.devices[dproperties.id].key = function(x, y, s)
-        -- print("menu key_handler called")
-        -- print(x, y, s)
         local corner = orient_to_corner(x, y, cols, rows) ~= nil
         if s == 1 then
-          -- print("Grid ID " .. k .. ": " .. x, y)
           editing_index = i          -- any keypress flags as being edited
           dproperties.enabled = true -- and enables device for inclusion in vgrid
             
           if corner then
-            -- print("corner press")
             if keypresses == 0 then
               rotate = true
             else
@@ -582,8 +572,7 @@ function key_handlers()
             end
             keypresses = keypresses + 1
             
-            -- set join_coords
-            if keypresses == 1 then
+            if keypresses == 1 then -- set join_coords
               
               -- 1. rotate from physical to virtual oriantation
               local x, y = rotate_pairs({x, y}, cols, rows, (dproperties.rot * 3) % 4)
@@ -599,7 +588,6 @@ function key_handlers()
                 y = y - 1
               elseif x == cols and y == 1 then
                 y = y - 1
-              -- elseif x == cols and y == rows then
               elseif x == 1 and y == rows then
                 x = x -1
               end
@@ -608,25 +596,19 @@ function key_handlers()
               local x = x + dproperties.x
               local y = y + dproperties.y
               
-              -- PROBLEM: source grid can be changed after this!
-              -- need to either pass source grid ID and process on keypress 2 or...
-              -- prevent any changes while keypress > 0 (prob easier)
-              -- also, can self-join!
               join_coords = {x, y}
-              print("SAVED JOIN_COORDS : " .. x, y)
-            
+
             elseif keypresses == 2 then
               dproperties.rot = orient_to_corner(x, y, cols, rows)
               x, y = join_coords[1], join_coords[2]
-              print("RETRIEVED JOIN_COORDS : " .. x, y)
               dproperties.x = x
               dproperties.y = y
               gen_layout()
               write_prefs()
             end
-          else
-            write_prefs() -- needed for non-corner presses
-            print(" NOT corner press")
+          else-- non-corner presses can still enable devices
+            gen_layout()
+            write_prefs()
           end
           
         elseif s == 0 and corner then
@@ -645,27 +627,21 @@ function key_handlers()
           end
 
         end
-        grid_viz()  -- todo check if running unnecessarily
+        grid_viz()
         m.redraw()
       end -- of v.key function
+      
     end
   end
 end
 
 
--- todo need to think about how to handle grid-settings mod. Disable?
 mod.hook.register("system_post_startup", "combiner post startup", function()
   
-  -- redefine some buggy system code and piggyback off this to trigger caching
+  -- fix for bug preventing grid.devices removal when no Grids are assigned to grid.vports
   _norns.grid.remove = function(id)
-    print("redefined grid.remove called")
-
-    -- write_prefs()     -- write them immediately -- TODO CONFIRM NOT NEEDED ANY MORE??
-    
     local g = grid.devices[id]
     if g then
-      
-      -- fix for bug preventing grid.devices removal with no Grids are assigned in grid.vports
       if grid.vports[g.port] ~= nil and grid.vports[g.port].remove then -- todo PR this line
         grid.vports[g.port].remove()
       end
@@ -678,40 +654,37 @@ mod.hook.register("system_post_startup", "combiner post startup", function()
   end
 
   
-  -- due to update_devices() overwriting vports after mod hook, redefine it
   local old_update_devices = grid.update_devices
   function grid.update_devices()
-    print("redefined update_devices called")
-    
-    local name = nil      -- save name of device we're editing
+    local name = nil
     if dproperties[editing_index] ~= nil then
-      name = dproperties[editing_index].name
+      name = dproperties[editing_index].name    -- save name of device we're editing
     end
     
-    old_update_devices()
-    gen_dproperties()     -- create dproperties with defaults
-    read_prefs()          -- load cached device properties
-    gen_layout()          -- generate led_routing
-    init_virtual()        -- generate virtual interface -- PROBLEM: why isn't this resetting col/rows
-    grid_functions()      -- define virtual to physical grid functions (led, etc..)
-    key_handlers()        -- define key callback handlers
+    old_update_devices()                        -- call original update_devices
+    gen_dproperties()                           -- create dproperties with defaults
+    read_prefs()                                -- load cached device properties
+    gen_layout()                                -- generate led_routing
+    init_virtual(combiner.cols, combiner.rows)  -- generate virtual interface
+    grid_functions()                            -- define vgrid functions (led, etc..)
+    key_handlers()                              -- define key callback handlers
 
-    editing_index = 1     -- restore or pick new device to edit
+    editing_index = 1                           -- restore or pick new device to edit
     for i = 1, #dproperties do
       if dproperties[i].name == name then
         editing_index = i
       end
     end
-    grid_viz()            -- redraw grid viz, has to happen AFTER editing_index reset
     if state == "menu" then
-      m.redraw()            -- redraw menu
+      grid_viz()                                -- redraw grid viz
+      m.redraw()                                -- redraw menu
     end
   end
   
 end)
 
 
--- requires norns 231114
+-- requires norns 231114- TODO could do a check
 mod.hook.register("script_post_init", "combiner post init", function()
   key_handlers()
 end)
