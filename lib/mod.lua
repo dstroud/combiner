@@ -658,7 +658,7 @@ end
 
 function m.deinit() -- on menu exit
   state = "running"
-  clock.cancel(blinky_clock)
+  if blinky_clock ~= nil then clock.cancel(blinky_clock) end
   if combiner.vgrid_dirty  then
     init_virtual(combiner.cols, combiner.rows)
     vgrid_dirty = false
