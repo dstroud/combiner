@@ -1,0 +1,19 @@
+{
+    "Lua.diagnostics.globals": [
+        "params",
+        "norns",
+        "crow",
+        "clock",
+        "util",
+        "tab",
+        "screen",
+        "grid",
+        "midi",
+        "metro",
+        "controlspec",
+        "_menu",
+        "include",
+        "poll",
+        "_norns"
+    ]
+}
