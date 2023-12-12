@@ -1,4 +1,5 @@
 -- https://github.com/dstroud/combiner
+
 local mod = require 'core/mods'
 local filepath = "/home/we/dust/data/combiner/"
 local state = "running"
@@ -231,7 +232,6 @@ end
 
 -- define virtual grid functions
 local function grid_functions()
-
   if state == "running" then
     combiner.led = nil  -- probably unnecessary
     combiner.all = nil
@@ -290,27 +290,48 @@ end
 
 
 -- Visuals drawn on physical grids to assist with config
-local function grid_viz()
-  if state == "menu" then
+local function grid_viz(style)
+  local rows = vgrid.rows
+  local cols = vgrid.cols
+    
+  if #dproperties > 0 then
+    local id = dproperties[editing_index].id
+    for k, v in pairs(grid.devices) do -- highlight Grid we're editing
+      _norns.grid_all_led(v.dev, k == id and 2 or 0)
+    end
+    
+    if style == "animate" then -- animate borders to help user understand layout
+      local border_1 = {}
+      local border_2 = {}
 
-    if #dproperties > 0 then
-      local id = dproperties[editing_index].id
-      for k, v in pairs(grid.devices) do -- highlight Grid we're editing
-        _norns.grid_all_led(v.dev, k == id and 2 or 0)
-      end
-
-      local rows = vgrid.rows
-      local cols = vgrid.cols
-      for x = 1, cols do      -- draw border around virtual grid
+      for x = 1, cols do table.insert(border_1, {x, 1}) end
+      
+      for y = 1, rows do
+        table.insert(border_1, {cols, y})
+        table.insert(border_2, {1, y})
+      end  
+  
+      for x = 1, cols do table.insert(border_2, {x, rows}) end
+      
+      clock.run(function()
+        for i = 1, #border_1 do
+          combiner:led(border_1[i][1], border_1[i][2], 15)
+          combiner:led(border_2[i][1], border_2[i][2], 15)
+          combiner:refresh()
+          clock.sleep(.007)
+        end
+      end)
+    else -- static
+      for x = 1, cols do
         for y = 1, rows do
           if x == 1 or x == cols or y == 1 or y == rows then
             combiner:led(x, y, 15)
           end
         end
       end
-
       combiner:refresh()
     end
+    
   end
 end
 
@@ -402,10 +423,12 @@ local function key_handlers()
               dproperties.x = x
               dproperties.y = y
               gen_layout()
+              grid_viz("animate")
               write_prefs()
             end
           else-- non-corner presses can still enable devices
             gen_layout()
+            grid_viz("animate")
             write_prefs()
           end
 
@@ -421,11 +444,11 @@ local function key_handlers()
             dproperties.y = 0
             rotate = false
             gen_layout()
+            grid_viz("animate")
             write_prefs()
           end
 
         end
-        grid_viz()
         m.redraw()
       end -- of v.key function
 
@@ -468,7 +491,6 @@ function m.enc(n, d)
         local key = menu_properties[menu_pos - 1]
         if key == "x" or key == "y" then
           local d = util.clamp(d, -1, 1) * snap_quantum
-          -- local snapped_coord = (math.floor(math.max(dproperties[key], 0) / snap_quantum + 0.5) * snap_quantum)
           local snapped_coord = (math.floor(dproperties[key] / snap_quantum + 0.5) * snap_quantum)
           if (d > 0 and snapped_coord > dproperties[key])
           or (d < 0 and snapped_coord < dproperties[key]) then
@@ -595,7 +617,7 @@ end
 function m.init() -- on menu entry
   state = "menu"
   grid_functions()
-  grid_viz()
+  grid_viz("animate")
   key_handlers()
 end
 
