@@ -3,16 +3,16 @@
 local mod = require 'core/mods'
 local filepath = "/home/we/dust/data/combiner/"
 local state = "running"
-local m = {} -- system mod menu for settings
+local m = {}                  -- system mod menu for settings
 local combiner = {}
-local version = 0.2  -- TODO update
+local version = 0.2           -- TODO update
 local dproperties = {}        -- sequential devices + properties
 local dcache = {}             -- cached user-configurable properties
 local keypresses = 0
 local menu_pos = 1
 local editing_index = 1       -- which index in dproperties is being edited
 local snap_quantum = 4
-local vgrid = grid.connect(1) -- Virtual Grid vport- hardcoded to 1
+local vgrid = grid.connect(1) -- virtual Grid vport- hardcoded to 1
 local led_routing = {}        -- routing table for virtual>>physical Grids
 local glyphs = {
   arrow = {
@@ -35,7 +35,7 @@ local function read_prefs()
   local prefs = {}
   if util.file_exists(filepath.."prefs.data") then
     prefs = tab.load(filepath.."prefs.data")
-    -- print('table >> read: ' .. filepath.."prefs.data")
+    print('table >> read: ' .. filepath.."prefs.data")
     if (version or 0) >= 0.2 then -- TODO adjust for breaking changes!
       dcache = prefs.dcache
 
@@ -126,6 +126,8 @@ end
 
 -- determines overall dimensions for virtual grid and generates LED routing table
 local function gen_layout()
+  combiner.cols = 0
+  combiner.rows = 0
   local x_min = nil     -- x origin of virtual grid
   local y_min = nil     -- y origin of virtual grid
   local x_max = nil     -- x max of virtual grid
@@ -133,7 +135,6 @@ local function gen_layout()
   local enabled = false -- flag to wipe cols/rows if no Grids are enabled
   for i = 1, #dproperties do
     if dproperties[i].enabled == true then
-      enabled = true
       local dproperties = dproperties[i]
       local rotation = dproperties.rot
       local swap = (rotation % 2) ~= 0
@@ -166,16 +167,13 @@ local function gen_layout()
     end
   end
 
-  -- extra check to reset cols/rows if all Grids are disabled/unplugged
-  combiner.cols = enabled and (combiner.cols or 0) or 0
-  combiner.rows = enabled and (combiner.rows or 0) or 0
-  init_virtual(combiner.cols, combiner.rows)
-
+  combiner.vgrid_dirty = true -- init vgrid on m.deinit
+  
   -- generate led_routing to translate from virtual to physical grids
   led_routing = {}
-  for x = 1, vgrid.cols do
+  for x = 1, combiner.cols do
     led_routing[x] = {}
-    for y = 1, vgrid.rows do
+    for y = 1, combiner.rows do
       led_routing[x][y] = {}
     end
   end
@@ -291,8 +289,8 @@ end
 
 -- Visuals drawn on physical grids to assist with config
 local function grid_viz(style)
-  local rows = vgrid.rows
-  local cols = vgrid.cols
+  local rows = combiner.rows
+  local cols = combiner.cols
     
   if #dproperties > 0 then
     local id = dproperties[editing_index].id
@@ -521,56 +519,98 @@ end
 function m.redraw()
   screen.clear()
   screen.blend_mode(2)
+  screen.line_width(1)
+  screen.aa(0)
   local devices = #dproperties
   local eproperties = dproperties[editing_index]  -- editing device properties
-  local vcols = vgrid.cols
-  local vrows = vgrid.rows
+  local vcols = combiner.cols
+  local vrows = combiner.rows
   local pos = 1
   local index = 1
+  local text = function(fn, x, y, string)
+    screen.move(x, y)
+    screen[fn](string)
+  end  
 
-  if devices == 0 then
+  if devices == 0 then  -- no hw
     screen.level(10)
-    screen.move(64,40)
-    screen.text_center("no grid detected")
-  else
+    text("text_center", 0, 10, "no grid detected")
+    
+  elseif vcols == 0 and vrows == 0 then -- nothing enabled
+    screen.clear()
+
+    screen.level(15)
+    text("text", 0, 10, "Tap col 1, row 1")
+    text("text", 0, 20, "to place first Grid")
+    
+    text("text", 0, 40, "Hold+tap corners")
+    text("text", 0, 50, "to place more Grids")
+
+    local function rect(x, y)
+      screen.level(4)
+      screen.rect(x, y, 16, 8)
+      screen.fill()
+    end
+    
+    local function keypress(x, y, blink)
+      screen.level(blink and 15 or 4)
+      screen.pixel(x, y)
+      screen.fill()
+      screen.update()
+    end  
+    
+    rect(95, 5)
+    rect(95, 35)
+    rect(112, 44)
+    rect(95, 44)
+    rect(112, 35)    
+    keypress(95 + 15, 35, true)
+    keypress(95, 35 + 7, true)
+    keypress(95 + 15, 35 + 7, true)
+    keypress(95, 35, true)
+
+    local blink = true
+    blinky_clock = clock.run(function()
+      while combiner.cols == 0 and combiner.rows == 0 do
+        keypress(95, 5, blink)
+        keypress(95, 44, blink)
+        keypress(112, 35, blink)
+        keypress(112, 44, blink)
+        blink = not blink
+        clock.sleep(.5)
+      end
+    end)
+
+  else  -- standard mod menu
     local description = editing_index .. "/" .. devices .. " " .. eproperties.description
 
     screen.level(menu_pos == index and 15 or 4)
-    screen.move(86, 10)
-    screen.text(description)
+    text("text", 86, 10, description)
+    
     if eproperties.enabled then
       screen.rect(124, 6, 3, 3)
       screen.fill()
     end
-
+    
     index = 2
     for _, v in ipairs(menu_properties) do
       screen.level(menu_pos == index and 15 or 4)
-      screen.move(86, (index + 1) * 10)
-      screen.text(v)
-      screen.move(127, (index + 1) * 10)
-      screen.text_right(eproperties[v] * (v == "rot" and 90 or 1))
+      text("text", 86, (index + 1) * 10, v)
+      text("text_right", 127, (index + 1) * 10, eproperties[v] * (v == "rot" and 90 or 1))
+      
       index = index + 1
     end
 
+    -- divider
     screen.level(2)
-    screen.move(81,0)
-    screen.line(81,63)
+    screen.move(82,0)   -- 0-indexed
+    screen.line(82,64)  -- 1-indexed
     screen.stroke()
-    
-    -- draw vgrid border
-    if vcols > 0 and vrows > 0 then
-      local x_min = combiner.x_min or 0
-      local y_min = combiner.y_min or 0
 
-      screen.level(2)
-      screen.move(x_min, y_min + 1)
-      screen.line(x_min + vcols, y_min + 1)
-      screen.line(x_min + vcols, y_min + vrows)
-      screen.line(x_min + 1, y_min + vrows)
-      screen.line(x_min + 1, y_min)
-      screen.stroke()
-    end
+    -- draw vgrid border
+    screen.level(1)
+    screen.rect((combiner.x_min or 0) + 1, (combiner.y_min or 0) + 1, vcols - 1, vrows - 1)
+    screen.stroke()
 
     -- draw individual grids
     for i = 1, devices do
@@ -578,15 +618,13 @@ function m.redraw()
       if iproperties.enabled then
         local rotation = (iproperties.rot * 3) % 4
         local rotated = (rotation % 2) ~= 0
-
         local cols = rotated and iproperties.rows or iproperties.cols
         local rows = rotated and iproperties.cols or iproperties.rows
-
         local x_offset = iproperties.x
         local y_offset = iproperties.y
 
-        screen.level(editing_index == i and 8 or 2)
         screen.rect(x_offset, y_offset, cols, rows)
+        screen.level(editing_index == i and 8 or 2)
         screen.fill()
 
         -- direction arrows
@@ -599,17 +637,13 @@ function m.redraw()
           screen.fill()
         end
       end
-
+      
     end
-
+  
     -- overlay vgrid dimensions
-    if vcols > 0 and vrows > 0 then
-      screen.level(4)
-      screen.move(76, 60)
-      screen.text_right(vcols .. "x" .. vrows)
-    end
+    screen.level(4)
+    text("text_right", 77, 60, vcols .. "x" .. vrows)
   end
-
   screen.update()
 end
 
@@ -624,6 +658,11 @@ end
 
 function m.deinit() -- on menu exit
   state = "running"
+  clock.cancel(blinky_clock)
+  if combiner.vgrid_dirty  then
+    init_virtual(combiner.cols, combiner.rows)
+    vgrid_dirty = false
+  end
   grid_functions()
   write_prefs()
   key_handlers()
@@ -660,8 +699,7 @@ mod.hook.register("system_post_startup", "combiner post startup", function()
     old_update_devices()                        -- call original update_devices
     gen_dproperties()                           -- create dproperties with defaults
     read_prefs()                                -- load cached device properties
-    gen_layout()                                -- generate led_routing
-    init_virtual(combiner.cols, combiner.rows)  -- generate virtual interface
+    gen_layout()                                -- generate layout and vgrid
     grid_functions()                            -- define vgrid functions (led, etc..)
     key_handlers()                              -- define key callback handlers
     editing_index = 1                           -- restore or pick new device to edit
@@ -673,6 +711,8 @@ mod.hook.register("system_post_startup", "combiner post startup", function()
     if state == "menu" then
       grid_viz()                                -- redraw grid viz
       m.redraw()                                -- redraw menu
+    else
+      init_virtual(combiner.cols, combiner.rows)  -- immediately trigger grid.add to notify scripts
     end
   end
 
