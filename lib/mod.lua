@@ -311,7 +311,8 @@ local function grid_viz(style)
   
       for x = 1, cols do table.insert(border_2, {x, rows}) end
       
-      clock.run(function()
+      if animate ~= nil then clock.cancel(animate) end
+      animate = clock.run(function()
         for i = 1, #border_1 do
           combiner:led(border_1[i][1], border_1[i][2], 15)
           combiner:led(border_2[i][1], border_2[i][2], 15)
@@ -534,7 +535,7 @@ function m.redraw()
 
   if devices == 0 then  -- no hw
     screen.level(10)
-    text("text_center", 0, 10, "no grid detected")
+    text("text_center", 60, 40, "no grid detected")
     
   elseif vcols == 0 and vrows == 0 then -- nothing enabled
     screen.clear()
@@ -657,6 +658,7 @@ end
 
 
 function m.deinit() -- on menu exit
+  if animate ~= nil then clock.cancel(animate) end
   state = "running"
   if blinky_clock ~= nil then clock.cancel(blinky_clock) end
   if combiner.vgrid_dirty  then
