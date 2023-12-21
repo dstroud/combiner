@@ -5,7 +5,7 @@ local filepath = "/home/we/dust/data/combiner/"
 local state = "running"
 local m = {}                  -- system mod menu for settings
 local combiner = {}
-local version = 0.2           -- TODO update
+local version = 0.21          -- TODO update
 local dproperties = {}        -- sequential devices + properties
 local dcache = {}             -- cached user-configurable properties
 local keypresses = 0
@@ -169,16 +169,15 @@ local function gen_layout()
 
   combiner.vgrid_dirty = true -- init vgrid on m.deinit
   
-  -- generate led_routing to translate from virtual to physical grids
+  -- generate flattened led_routing to translate from virtual to physical grids
   led_routing = {}
   for x = 1, combiner.cols do
-    led_routing[x] = {}
-    for y = 1, combiner.rows do
-      led_routing[x][y] = {}
-    end
-  end
+		for y = 1, combiner.rows do
+      led_routing[y * combiner.cols + x] = {}
+		end
+	end  
 
-  for i = 1, #dproperties do -- todo test with 0 configured. Also need enabled/disabled devices
+  for i = 1, #dproperties do
     if dproperties[i].enabled == true then
       local dproperties = dproperties[i]
       local x_offset = dproperties.x
@@ -193,7 +192,7 @@ local function gen_layout()
           local x_virtual = x_real + x_offset - (x_min or 0)
           local y_virtual = y_real + y_offset - (y_min or 0)
           local x_real, y_real = rotate_pairs({x_real, y_real}, cols, rows, rotation)
-          table.insert(led_routing[x_virtual][y_virtual], {dproperties.id, x_real, y_real})
+          table.insert(led_routing[y_virtual * combiner.cols + x_virtual], {dproperties.id, x_real, y_real})
         end
       end
     end
@@ -236,14 +235,12 @@ local function grid_functions()
     combiner.refresh = nil
 
     function vgrid:led(x, y, val)
-      if led_routing[x] then -- in case script sends invalid coords
-        local routing = led_routing[x][y] or {} -- same
-        for i = 1, #routing do
-          _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val)
-        end
+      local routing = led_routing[y * combiner.cols + x] or {}
+      for i = 1, #routing do
+        _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val)
       end
     end
-
+    
     function vgrid:all(val)
       for i = 1, #dproperties do _norns.grid_all_led(dproperties[i].dev, val) end
     end
@@ -267,14 +264,12 @@ local function grid_functions()
 
     -- use faux Grid functions while menu is open
     function combiner:led(x, y, val)
-      if led_routing[x] then
-        local routing = led_routing[x][y] or {}
-        for i = 1, #routing do
-          _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val)
-        end
+      local routing = led_routing[y * combiner.cols + x] or {}
+      for i = 1, #routing or nil do
+        _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val)
       end
     end
-
+    
     function combiner:all(val)
       for i = 1, #dproperties do _norns.grid_all_led(dproperties[i].dev, val) end
     end
