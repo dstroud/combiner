@@ -5,7 +5,7 @@ local filepath = "/home/we/dust/data/combiner/"
 local state = "running"
 local m = {}                  -- system mod menu for settings
 local combiner = {}
-local version = 0.21          -- TODO update
+local version = 0.22          -- TODO update
 local dproperties = {}        -- sequential devices + properties
 local dcache = {}             -- cached user-configurable properties
 local keypresses = 0
@@ -36,7 +36,7 @@ local function read_prefs()
   if util.file_exists(filepath.."prefs.data") then
     prefs = tab.load(filepath.."prefs.data")
     print('table >> read: ' .. filepath.."prefs.data")
-    if (version or 0) >= 0.2 then -- TODO adjust for breaking changes!
+    if (prefs.version or 0) >= 0.2 then -- TODO adjust for breaking changes!
       dcache = prefs.dcache
 
       for i = 1, #dproperties do        -- apply settings to matching device names
