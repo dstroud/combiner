@@ -5,7 +5,7 @@ local filepath = "/home/we/dust/data/combiner/"
 local state = "running"
 local m = {}                  -- system mod menu for settings
 local combiner = {}
-local version = 0.22          -- TODO update
+local version = 0.23          -- TODO update
 local dproperties = {}        -- sequential devices + properties
 local dcache = {}             -- cached user-configurable properties
 local keypresses = 0
@@ -234,15 +234,15 @@ local function grid_functions()
     combiner.all = nil
     combiner.refresh = nil
 
-    function vgrid:led(x, y, val)
+    function vgrid:led(x, y, val, rel)
       local routing = led_routing[y * combiner.cols + x] or {}
       for i = 1, #routing do
-        _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val)
+        _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val, rel)
       end
     end
     
-    function vgrid:all(val)
-      for i = 1, #dproperties do _norns.grid_all_led(dproperties[i].dev, val) end
+    function vgrid:all(val, rel)
+      for i = 1, #dproperties do _norns.grid_all_led(dproperties[i].dev, val, rel) end
     end
 
     function vgrid:refresh()
@@ -263,10 +263,10 @@ local function grid_functions()
     function vgrid:tilt_enable() end
 
     -- use faux Grid functions while menu is open
-    function combiner:led(x, y, val)
+    function combiner:led(x, y, val, rel)
       local routing = led_routing[y * combiner.cols + x] or {}
       for i = 1, #routing or nil do
-        _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val)
+        _norns.grid_set_led(grid.devices[routing[i][1]].dev, routing[i][2], routing[i][3], val, rel)
       end
     end
     
@@ -290,7 +290,7 @@ local function grid_viz(style)
   if #dproperties > 0 then
     local id = dproperties[editing_index].id
     for k, v in pairs(grid.devices) do -- highlight Grid we're editing
-      _norns.grid_all_led(v.dev, k == id and 2 or 0)
+      _norns.grid_all_led(v.dev, k == id and 2 or 0, false)
     end
     
     if style == "animate" then -- animate borders to help user understand layout
